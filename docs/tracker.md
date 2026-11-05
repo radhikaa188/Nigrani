@@ -59,7 +59,7 @@
 - [x] Hand-written ownership test: User A creates a note, User B requests it, expect denial
 - [x] Script runs the test on V1, V2, V3 and stores results (JSON or SQLite is fine)
 - [x] Script prints the matrix and names V3 as the first failed version
-- [ ] Tag `stage-1-done`
+- [x] Tag `stage-1-done`
 
 **Done when:** output shows PASS, PASS, FAIL and names V3.
 
