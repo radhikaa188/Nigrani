@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        entry: python -m pre_commit_hooks.trailing_whitespace_fixer
+      - id: end-of-file-fixer
+        entry: python -m pre_commit_hooks.end_of_file_fixer
+      - id: check-yaml
+        entry: python -m pre_commit_hooks.check_yaml
+      - id: check-added-large-files
+        entry: python -m pre_commit_hooks.check_added_large_files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        entry: python -m detect_secrets.pre_commit_hook
+        exclude: (package-lock\.json|\.env\.example)$
