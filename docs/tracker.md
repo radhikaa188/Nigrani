@@ -53,7 +53,7 @@
 
 ## Stage 1: Prove the idea (CLI only)
 - [x] Notes app V1: basic notes, owner-only access
-- [ ] V2: search feature added
+- [x] V2: search feature added
 - [ ] V3: sharing feature that accidentally breaks owner-only access
 - [ ] Each version saved as a git commit with a tag (v1, v2, v3)
 - [ ] Hand-written ownership test: User A creates a note, User B requests it, expect denial
