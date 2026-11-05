@@ -1,0 +1,31 @@
+{
+  "test_name": "ownership_test",
+  "tested_at": "2026-11-05T16:18:25.810952+00:00",
+  "target_app": "golden/notes-app",
+  "tags": [
+    "v1",
+    "v2",
+    "v3"
+  ],
+  "results": [
+    {
+      "tag": "v1",
+      "status": "PASS",
+      "details": "User B was denied access (HTTP 403)",
+      "duration_s": 1.01
+    },
+    {
+      "tag": "v2",
+      "status": "PASS",
+      "details": "User B was denied access (HTTP 403)",
+      "duration_s": 0.9
+    },
+    {
+      "tag": "v3",
+      "status": "FAIL",
+      "details": "User B received note data (HTTP 200) - REGRESSION detected!",
+      "duration_s": 0.94
+    }
+  ],
+  "first_failed_version": "v3"
+}
