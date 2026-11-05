@@ -9,8 +9,8 @@
 ## Progress overview
 | # | Stage | Status | Branch / tag | Started | Finished | Notes |
 |---|---|---|---|---|---|---|
-| 0 | Setup and tracking | Not started | stage-0-setup | | | |
-| 1 | Prove the idea (CLI only) | Not started | stage-1-slice | | | |
+| 0 | Setup and tracking | Done | main | 2026-11-05 | 2026-11-05 | Setup verified |
+| 1 | Prove the idea (CLI only) | In progress | stage-1-slice | 2026-11-05 | | |
 | 2 | Sandbox and test templates | Not started | stage-2-sandbox | | | |
 | 3 | Backend core | Not started | stage-3-backend | | | |
 | 4 | Regression engine (core) | Not started | stage-4-regression | | | |
@@ -30,7 +30,7 @@
 | 13 | Evaluation | Not started | stage-13-eval | | | |
 | 14 | Report and polish | Not started | v1.0 | | | |
 
-**Current stage:** 0
+**Current stage:** 1
 **Cut line:** must finish Stages 0 to 10, 6B (at least batches 1 and 2), 7B (first 6 skills) and 13. Then the rest of 6B, 12, 12B, 11. Drop first: Tier 2 checks, agent simplification, bisect, doc drift, MCP, fine-tuning, Strix plugin, GitHub Action, notifications.
 
 ---
@@ -52,7 +52,7 @@
 **Done when:** `/health` returns OK, the frontend loads, one test passes, Ollama answers.
 
 ## Stage 1: Prove the idea (CLI only)
-- [ ] Notes app V1: basic notes, owner-only access
+- [x] Notes app V1: basic notes, owner-only access
 - [ ] V2: search feature added
 - [ ] V3: sharing feature that accidentally breaks owner-only access
 - [ ] Each version saved as a git commit with a tag (v1, v2, v3)
