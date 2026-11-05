@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-05 | Worktree-based test runner for version matrices | Avoids dirty in-place checkouts and preserves clean workspace state across tag evaluations |
 | 2026-11-05 | Ollama qwen2.5-coder:3b measured: ~2.2s response time warm, ~137MB RAM idle working set | Validates local CPU execution speed on 16GB laptop |
 | 2026-11-03 | Build our own agent runtime; no agent frameworks | Practical, and shows real skill |
 | 2026-11-03 | Brain: open-weight model through Ollama behind a swappable adapter; hosted model optional, for development and comparison only | No per-call cost; fits the project goal |

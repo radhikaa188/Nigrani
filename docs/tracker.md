@@ -10,7 +10,7 @@
 | # | Stage | Status | Branch / tag | Started | Finished | Notes |
 |---|---|---|---|---|---|---|
 | 0 | Setup and tracking | Done | main | 2026-11-05 | 2026-11-05 | Setup verified |
-| 1 | Prove the idea (CLI only) | In progress | stage-1-slice | 2026-11-05 | | |
+| 1 | Prove the idea (CLI only) | Done | stage-1-slice / stage-1-done | 2026-11-05 | 2026-11-05 | Notes app v1-v3; matrix output: PASS, PASS, FAIL (v3) |
 | 2 | Sandbox and test templates | Not started | stage-2-sandbox | | | |
 | 3 | Backend core | Not started | stage-3-backend | | | |
 | 4 | Regression engine (core) | Not started | stage-4-regression | | | |
@@ -56,9 +56,9 @@
 - [x] V2: search feature added
 - [x] V3: sharing feature that accidentally breaks owner-only access
 - [x] Each version saved as a git commit with a tag (v1, v2, v3)
-- [ ] Hand-written ownership test: User A creates a note, User B requests it, expect denial
-- [ ] Script runs the test on V1, V2, V3 and stores results (JSON or SQLite is fine)
-- [ ] Script prints the matrix and names V3 as the first failed version
+- [x] Hand-written ownership test: User A creates a note, User B requests it, expect denial
+- [x] Script runs the test on V1, V2, V3 and stores results (JSON or SQLite is fine)
+- [x] Script prints the matrix and names V3 as the first failed version
 - [ ] Tag `stage-1-done`
 
 **Done when:** output shows PASS, PASS, FAIL and names V3.
@@ -251,7 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
-| | | | |
+| 2026-11-05 | Stage 1 (Notes app v1-v3, ownership regression test runner) | Notes app v1, v2, v3 built & tagged; run_ownership_test.py automated matrix detection | Stage 2 (Sandbox and test templates) |
 
 ## Parking lot (stretch, not planned)
 Agent simplification, bisect across commits, doc drift check, MCP server, notifications, Strix plugin, fine-tuned model, GitHub Action for pull-request scans, Tier 3 checks.
