@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,7 +29,18 @@ DEFAULT_DB_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://notes_user:notes_password@localhost:5434/notes_db",  # pragma: allowlist secret
 )
-RESULTS_PATH = REPO_ROOT / "recordings" / "ownership_test_results.json"
+RESULTS_PATH = (
+    Path(__file__).resolve().parent / "results" / "ownership_test_results.json"
+)
+
+
+def get_sanitized_db_target(url: str) -> str:
+    """Returns database host, port, and database name, omitting credentials."""
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or "localhost"
+    port_str = f":{parsed.port}" if parsed.port else ""
+    db_name = parsed.path.lstrip("/") or "unknown_db"
+    return f"{host}{port_str}/{db_name}"
 
 
 def find_free_port() -> int:
@@ -452,7 +464,7 @@ def main() -> None:
     tags = sys.argv[1:] if len(sys.argv) > 1 else DEFAULT_TAGS
 
     print(f"Starting Nigrani ownership regression test across tags: {', '.join(tags)}")
-    print(f"Database target: {DEFAULT_DB_URL}")
+    print(f"Database target: {get_sanitized_db_target(DEFAULT_DB_URL)}")
 
     ensure_database_seeded()
 
