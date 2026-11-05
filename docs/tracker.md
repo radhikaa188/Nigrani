@@ -54,8 +54,8 @@
 ## Stage 1: Prove the idea (CLI only)
 - [x] Notes app V1: basic notes, owner-only access
 - [x] V2: search feature added
-- [ ] V3: sharing feature that accidentally breaks owner-only access
-- [ ] Each version saved as a git commit with a tag (v1, v2, v3)
+- [x] V3: sharing feature that accidentally breaks owner-only access
+- [x] Each version saved as a git commit with a tag (v1, v2, v3)
 - [ ] Hand-written ownership test: User A creates a note, User B requests it, expect denial
 - [ ] Script runs the test on V1, V2, V3 and stores results (JSON or SQLite is fine)
 - [ ] Script prints the matrix and names V3 as the first failed version
