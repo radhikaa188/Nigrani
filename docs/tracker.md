@@ -11,7 +11,7 @@
 |---|---|---|---|---|---|---|
 | 0 | Setup and tracking | Done | main | 2026-11-05 | 2026-11-05 | Setup verified |
 | 1 | Prove the idea (CLI only) | Done | stage-1-slice / stage-1-done | 2026-11-05 | 2026-11-05 | Notes app v1-v3; matrix output: PASS, PASS, FAIL (v3) |
-| 2 | Sandbox and test templates | Not started | stage-2-sandbox | | | |
+| 2 | Sandbox and test templates | In progress | stage-2-sandbox | 2026-11-06 | | |
 | 3 | Backend core | Not started | stage-3-backend | | | |
 | 4 | Regression engine (core) | Not started | stage-4-regression | | | |
 | 5 | Dashboard v1 | Not started | stage-5-dashboard | | | |
@@ -64,7 +64,7 @@
 **Done when:** output shows PASS, PASS, FAIL and names V3.
 
 ## Stage 2: Sandbox and test templates
-- [ ] Dockerfile for running a Node app
+- [x] Dockerfile for running a Node app
 - [ ] Postgres + PostgREST containers with an `auth.uid()` helper
 - [ ] Seed User A, User B, Admin, Anonymous (generated passwords)
 - [ ] `http_request_as(user, request)` helper
@@ -251,6 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
+| 2026-11-06 | Stage 2 (Task 11: generic sandbox Dockerfile) | Created sandbox/node-app/Dockerfile and .dockerignore, verified non-root and /health | Stage 2 (Task 12: Postgres + PostgREST containers) |
 | 2026-11-05 | Stage 1 (Notes app v1-v3, ownership regression test runner) | Notes app v1, v2, v3 built & tagged; run_ownership_test.py automated matrix detection | Stage 2 (Sandbox and test templates) |
 
 ## Parking lot (stretch, not planned)
