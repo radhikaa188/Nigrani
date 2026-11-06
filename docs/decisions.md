@@ -5,6 +5,9 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-06 | Sandbox runner hard limits & guarantees | Enforces 512MB memory limit, 60s configurable timeout with container kill, non-root user (node uid 1000), internal network isolation, and try/finally auto-destruction with zero leftover containers |
+| 2026-11-06 | Validation template side-effect verdict model | Distinguishes safe input rejection (400/422/sanitized 201) as PASS, unhandled server crashes (500) as ERROR, and destructive state mutation as FAIL |
+| 2026-11-06 | RLS template thin wrapper around ownership logic | Reuses proven differential target logic with unfiltered queries (GET /table_name) to verify auth.uid() row isolation across PostgREST tables |
 | 2026-11-06 | Role template with admin confirmation pre-check | Executes an authorized admin request (expecting 200) before testing non-admin denial (expecting 403/404) to prevent false passes on broken or unexposed routes |
 | 2026-11-06 | Unauthenticated template: PostgREST anonymous PASS condition | In sandbox setup (PGRST_DB_ANON_ROLE='anon'), unauthenticated requests execute under 'anon' role; RLS filtering returns HTTP 200 with empty list [], or 401/403 if ungranted |
 | 2026-11-06 | Dual-target ownership template with differential verdict logic | Evaluates PASS/FAIL across both full REST backends (denial codes) and PostgREST gateways (empty RLS query returns) with ERROR safety on creation/connection faults |

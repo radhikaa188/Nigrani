@@ -1,0 +1,627 @@
+{
+  "suite": "stage_2_matrix_verification",
+  "timestamp": "2026-11-06T17:36:31.368100+00:00",
+  "total_tests": 12,
+  "summary": {
+    "pass": 10,
+    "fail": 1,
+    "error": 1
+  },
+  "results": [
+    {
+      "app_tag": "v1",
+      "template": "ownership",
+      "status": "PASS",
+      "details": "User B cannot access User A's note (403)",
+      "duration_s": 0.085,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/notes/58",
+          "url": "http://localhost:59038/notes/58",
+          "identity": "user_b",
+          "headers": {
+            "Authorization": "Bearer <REDACTED_JWT identity='user_b'>"
+          },
+          "body": null
+        },
+        "response": {
+          "status_code": 403,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "55",
+            "ETag": "W/\"37-Uk8L91IAabhqjR3oVGQowOITRLs\"",
+            "Date": "Fri, 06 Nov 2026 17:36:14 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "error": "Access denied: note belongs to another user"
+          }
+        },
+        "duration_ms": 26.53
+      }
+    },
+    {
+      "app_tag": "v1",
+      "template": "unauthenticated",
+      "status": "PASS",
+      "details": "Protected route rejects anonymous (401)",
+      "duration_s": 0.013,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/notes",
+          "url": "http://localhost:59038/notes",
+          "identity": "anonymous",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status_code": 401,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "36",
+            "ETag": "W/\"24-jzbROZ9oBhNJAX3WKmSLhwhOpT4\"",
+            "Date": "Fri, 06 Nov 2026 17:36:14 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "error": "Missing or invalid token"
+          }
+        },
+        "duration_ms": 12.62
+      }
+    },
+    {
+      "app_tag": "v1",
+      "template": "validation",
+      "status": "PASS",
+      "details": "Invalid inputs safely rejected (400) or sanitized (201)",
+      "duration_s": 0.044,
+      "evidence": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59038/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "empty_title",
+              "body": {
+                "title": "",
+                "content": "Valid content"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:14 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 13.55
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59038/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "missing_title",
+              "body": {
+                "content": "Missing title completely"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:14 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 7.85
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59038/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "sql_injection",
+              "body": {
+                "title": "SQLi test'; DROP TABLE notes; --",
+                "content": "Injected SQL content"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:14 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 21.06
+        }
+      ]
+    },
+    {
+      "app_tag": "v1",
+      "template": "role",
+      "status": "PASS",
+      "details": "Admin route rejects non-admin (403) and allows admin (200)",
+      "duration_s": 0.036,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/admin/users",
+          "url": "http://localhost:59052/admin/users",
+          "identity": "user_a",
+          "headers": {
+            "Authorization": "Bearer <REDACTED_JWT identity='user_a'>"
+          },
+          "body": null
+        },
+        "response": {
+          "status_code": 403,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "31",
+            "ETag": "W/\"1f-e/H0W8PvXPk5yx09PD60DMkU+UA\"",
+            "Date": "Fri, 06 Nov 2026 17:36:16 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "error": "Admin role required"
+          }
+        },
+        "duration_ms": 20.66
+      }
+    },
+    {
+      "app_tag": "v1",
+      "template": "rls",
+      "status": "PASS",
+      "details": "PostgREST RLS isolates rows via auth.uid() (empty query result)",
+      "duration_s": 0.056,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/test_user_notes",
+          "url": "http://localhost:5436/test_user_notes",
+          "identity": "user_b",
+          "headers": {
+            "Authorization": "Bearer <REDACTED_JWT identity='user_b'>"
+          },
+          "body": null
+        },
+        "response": {
+          "status_code": 200,
+          "headers": {
+            "Transfer-Encoding": "chunked",
+            "Date": "Fri, 06 Nov 2026 17:36:18 GMT",
+            "Server": "postgrest/12.2.0",
+            "Content-Range": "*/*",
+            "Content-Location": "/test_user_notes",
+            "Content-Type": "application/json; charset=utf-8"
+          },
+          "body": []
+        },
+        "duration_ms": 24.02
+      }
+    },
+    {
+      "app_tag": "v2",
+      "template": "ownership",
+      "status": "PASS",
+      "details": "User B cannot access User A's note (403)",
+      "duration_s": 0.052,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/notes/59",
+          "url": "http://localhost:59062/notes/59",
+          "identity": "user_b",
+          "headers": {
+            "Authorization": "Bearer <REDACTED_JWT identity='user_b'>"
+          },
+          "body": null
+        },
+        "response": {
+          "status_code": 403,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "55",
+            "ETag": "W/\"37-Uk8L91IAabhqjR3oVGQowOITRLs\"",
+            "Date": "Fri, 06 Nov 2026 17:36:20 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "error": "Access denied: note belongs to another user"
+          }
+        },
+        "duration_ms": 9.35
+      }
+    },
+    {
+      "app_tag": "v2",
+      "template": "unauthenticated",
+      "status": "PASS",
+      "details": "Protected route rejects anonymous (401)",
+      "duration_s": 0.006,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/notes",
+          "url": "http://localhost:59062/notes",
+          "identity": "anonymous",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status_code": 401,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "36",
+            "ETag": "W/\"24-jzbROZ9oBhNJAX3WKmSLhwhOpT4\"",
+            "Date": "Fri, 06 Nov 2026 17:36:20 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "error": "Missing or invalid token"
+          }
+        },
+        "duration_ms": 5.41
+      }
+    },
+    {
+      "app_tag": "v2",
+      "template": "validation",
+      "status": "PASS",
+      "details": "Invalid inputs safely rejected (400) or sanitized (201)",
+      "duration_s": 0.05,
+      "evidence": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59062/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "empty_title",
+              "body": {
+                "title": "",
+                "content": "Valid content"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:20 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 11.06
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59062/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "missing_title",
+              "body": {
+                "content": "Missing title completely"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:20 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 19.88
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59062/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "sql_injection",
+              "body": {
+                "title": "SQLi test'; DROP TABLE notes; --",
+                "content": "Injected SQL content"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:20 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 17.4
+        }
+      ]
+    },
+    {
+      "app_tag": "v3",
+      "template": "ownership",
+      "status": "FAIL",
+      "details": "User B accessed User A's shared note (200) - REGRESSION DETECTED",
+      "duration_s": 0.064,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/notes/60",
+          "url": "http://localhost:59075/notes/60",
+          "identity": "user_b",
+          "headers": {
+            "Authorization": "Bearer <REDACTED_JWT identity='user_b'>"
+          },
+          "body": null
+        },
+        "response": {
+          "status_code": 200,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "161",
+            "ETag": "W/\"a1-MbSgHV/3wRDJUfevHvla8Gre4rg\"",
+            "Date": "Fri, 06 Nov 2026 17:36:23 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "id": 60,
+            "user_id": 162,
+            "title": "Confidential Ownership Resource",
+            "content": "Secret data belonging exclusively to User A",
+            "created_at": "2026-11-06T17:36:23.049Z"
+          }
+        },
+        "duration_ms": 10.73
+      }
+    },
+    {
+      "app_tag": "v3",
+      "template": "unauthenticated",
+      "status": "PASS",
+      "details": "Protected route rejects anonymous (401)",
+      "duration_s": 0.006,
+      "evidence": {
+        "request": {
+          "method": "GET",
+          "path": "/notes",
+          "url": "http://localhost:59075/notes",
+          "identity": "anonymous",
+          "headers": {},
+          "body": null
+        },
+        "response": {
+          "status_code": 401,
+          "headers": {
+            "X-Powered-By": "Express",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": "36",
+            "ETag": "W/\"24-jzbROZ9oBhNJAX3WKmSLhwhOpT4\"",
+            "Date": "Fri, 06 Nov 2026 17:36:23 GMT",
+            "Connection": "close"
+          },
+          "body": {
+            "error": "Missing or invalid token"
+          }
+        },
+        "duration_ms": 5.44
+      }
+    },
+    {
+      "app_tag": "v3",
+      "template": "validation",
+      "status": "PASS",
+      "details": "Invalid inputs safely rejected (400) or sanitized (201)",
+      "duration_s": 0.024,
+      "evidence": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59075/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "empty_title",
+              "body": {
+                "title": "",
+                "content": "Valid content"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:23 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 7.81
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59075/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "missing_title",
+              "body": {
+                "content": "Missing title completely"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:23 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 6.88
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/notes",
+            "url": "http://localhost:59075/notes",
+            "identity": "user_a",
+            "headers": {
+              "Authorization": "Bearer <REDACTED_JWT identity='user_a'>",
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "name": "sql_injection",
+              "body": {
+                "title": "SQLi test'; DROP TABLE notes; --",
+                "content": "Injected SQL content"
+              },
+              "expected_safe": true
+            }
+          },
+          "response": {
+            "status_code": 400,
+            "headers": {
+              "X-Powered-By": "Express",
+              "Content-Type": "application/json; charset=utf-8",
+              "Content-Length": "29",
+              "ETag": "W/\"1d-53lIJ95lGl3GPLg/Tko6BPJr+/c\"",
+              "Date": "Fri, 06 Nov 2026 17:36:23 GMT",
+              "Connection": "close"
+            },
+            "body": {
+              "error": "Title is required"
+            }
+          },
+          "duration_ms": 7.33
+        }
+      ]
+    },
+    {
+      "app_tag": "broken",
+      "template": "ownership",
+      "status": "ERROR",
+      "details": "App failed to start (syntax error injected)",
+      "duration_s": 7.648,
+      "evidence": {}
+    }
+  ]
+}

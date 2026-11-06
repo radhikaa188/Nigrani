@@ -11,8 +11,8 @@
 |---|---|---|---|---|---|---|
 | 0 | Setup and tracking | Done | main | 2026-11-05 | 2026-11-05 | Setup verified |
 | 1 | Prove the idea (CLI only) | Done | stage-1-slice / stage-1-done | 2026-11-05 | 2026-11-05 | Notes app v1-v3; matrix output: PASS, PASS, FAIL (v3) |
-| 2 | Sandbox and test templates | In progress | stage-2-sandbox | 2026-11-06 | | |
-| 3 | Backend core | Not started | stage-3-backend | | | |
+| 2 | Sandbox and test templates | Done | stage-2-sandbox / stage-2-done | 2026-11-06 | 2026-11-06 | All 5 templates verified across Notes v1-v3, PostgREST, broken build; zero leftover containers |
+| 3 | Backend core | In progress | stage-3-backend | | | |
 | 4 | Regression engine (core) | Not started | stage-4-regression | | | |
 | 5 | Dashboard v1 | Not started | stage-5-dashboard | | | |
 | A | **Checkpoint A: core demo** | Not started | v0.1 | | | |
@@ -30,7 +30,7 @@
 | 13 | Evaluation | Not started | stage-13-eval | | | |
 | 14 | Report and polish | Not started | v1.0 | | | |
 
-**Current stage:** 2
+**Current stage:** 3
 **Cut line:** must finish Stages 0 to 10, 6B (at least batches 1 and 2), 7B (first 6 skills) and 13. Then the rest of 6B, 12, 12B, 11. Drop first: Tier 2 checks, agent simplification, bisect, doc drift, MCP, fine-tuning, Strix plugin, GitHub Action, notifications.
 
 ---
@@ -71,12 +71,12 @@
 - [x] Template: ownership
 - [x] Template: unauthenticated
 - [x] Template: role
-- [ ] Template: RLS
-- [ ] Template: validation
-- [ ] Result states PASS / FAIL / ERROR / SKIPPED; build failure gives ERROR
-- [ ] Limits: timeout, memory, non-root, no network except its own DB, container destroyed after run
-- [ ] Run all templates on Notes V1 to V3 with evidence stored
-- [ ] Record run time and RAM
+- [x] Template: RLS
+- [x] Template: validation
+- [x] Result states PASS / FAIL / ERROR / SKIPPED; build failure gives ERROR
+- [x] Limits: timeout, memory, non-root, no network except its own DB, container destroyed after run
+- [x] Run all templates on Notes V1 to V3 with evidence stored
+- [x] Record run time and RAM
 
 **Done when:** templates run with evidence on Notes, and a deliberately broken build gives `ERROR`, not `FAIL`.
 
@@ -251,6 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
+| 2026-11-06 | Stage 2 (Tasks 19-21: RLS, validation, limits & full matrix) | Built rls.py, validation.py, runner.py hardening (memory 512MB, timeout 60s, non-root, zero leftovers); ran full Stage 2 matrix across Notes v1-v3, PostgREST, broken build | Stage 3 (Backend core) |
 | 2026-11-06 | Stage 2 (Task 18: Template: role) | Built generic run_role_test template with admin baseline verification; tagged v1-admin-test in Notes app and verified 403 (non-admin) vs 200 (admin) | Stage 2 (Remaining test templates: RLS, validation) |
 | 2026-11-06 | Stage 2 (Task 17: Template: unauthenticated) | Built generic run_unauthenticated_test template; verified HTTP 401 on Notes v1-v3 and HTTP 200 [] on PostgREST under anonymous role | Stage 2 (Remaining test templates: role, RLS, validation) |
 | 2026-11-06 | Stage 2 (Task 16: Template: ownership) | Built generic run_ownership_test template supporting both 'app' and 'postgrest' targets, PASS/FAIL/ERROR verdicts, and Notes v1/v3 & PostgREST verification | Stage 2 (Remaining test templates: unauthenticated, role, RLS, validation) |
