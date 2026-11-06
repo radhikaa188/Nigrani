@@ -70,7 +70,7 @@
 - [x] `http_request_as(user, request)` helper
 - [x] Template: ownership
 - [x] Template: unauthenticated
-- [ ] Template: role
+- [x] Template: role
 - [ ] Template: RLS
 - [ ] Template: validation
 - [ ] Result states PASS / FAIL / ERROR / SKIPPED; build failure gives ERROR
@@ -251,6 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
+| 2026-11-06 | Stage 2 (Task 18: Template: role) | Built generic run_role_test template with admin baseline verification; tagged v1-admin-test in Notes app and verified 403 (non-admin) vs 200 (admin) | Stage 2 (Remaining test templates: RLS, validation) |
 | 2026-11-06 | Stage 2 (Task 17: Template: unauthenticated) | Built generic run_unauthenticated_test template; verified HTTP 401 on Notes v1-v3 and HTTP 200 [] on PostgREST under anonymous role | Stage 2 (Remaining test templates: role, RLS, validation) |
 | 2026-11-06 | Stage 2 (Task 16: Template: ownership) | Built generic run_ownership_test template supporting both 'app' and 'postgrest' targets, PASS/FAIL/ERROR verdicts, and Notes v1/v3 & PostgREST verification | Stage 2 (Remaining test templates: unauthenticated, role, RLS, validation) |
 | 2026-11-06 | Stage 2 (Task 15: http_request_as helper) | Built reusable http_request_as helper with identity normalization, structured evidence, token redaction, and PostgREST/app target support | Stage 2 (Task 16: Test templates: ownership, unauthenticated, role, RLS, validation) |
