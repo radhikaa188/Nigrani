@@ -30,7 +30,7 @@
 | 13 | Evaluation | Not started | stage-13-eval | | | |
 | 14 | Report and polish | Not started | v1.0 | | | |
 
-**Current stage:** 1
+**Current stage:** 2
 **Cut line:** must finish Stages 0 to 10, 6B (at least batches 1 and 2), 7B (first 6 skills) and 13. Then the rest of 6B, 12, 12B, 11. Drop first: Tier 2 checks, agent simplification, bisect, doc drift, MCP, fine-tuning, Strix plugin, GitHub Action, notifications.
 
 ---
@@ -67,7 +67,7 @@
 - [x] Dockerfile for running a Node app
 - [x] Postgres + PostgREST containers with an `auth.uid()` helper
 - [x] Seed User A, User B, Admin, Anonymous (generated passwords)
-- [ ] `http_request_as(user, request)` helper
+- [x] `http_request_as(user, request)` helper
 - [ ] Template: ownership
 - [ ] Template: unauthenticated
 - [ ] Template: role
@@ -251,6 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
+| 2026-11-06 | Stage 2 (Task 15: http_request_as helper) | Built reusable http_request_as helper with identity normalization, structured evidence, token redaction, and PostgREST/app target support | Stage 2 (Task 16: Test templates: ownership, unauthenticated, role, RLS, validation) |
 | 2026-11-06 | Stage 2 (Tasks 11, 13, 14: sandbox Dockerfile, PostgREST + auth.uid(), seed_users) | Built sandbox Dockerfile, PostgREST RLS with auth.uid(), and reusable schema-flexible seed_users module | Stage 2 (Task 15: http_request_as helper) |
 | 2026-11-05 | Stage 1 (Notes app v1-v3, ownership regression test runner) | Notes app v1, v2, v3 built & tagged; run_ownership_test.py automated matrix detection | Stage 2 (Sandbox and test templates) |
 

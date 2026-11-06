@@ -42,13 +42,15 @@ class UserTableConfig:
 class TestIdentity:
     """Represents one of the 4 standard testing identities."""
 
+    __test__ = False
+
     name: str  # "User A", "User B", "Admin", "Anonymous"
-    email: str | None
-    raw_password: str | None
-    user_id: Any | None
-    role: str | None
-    jwt_token: str | None
-    is_db_user: bool  # False for Anonymous (no DB row)
+    email: str | None = None
+    raw_password: str | None = None
+    user_id: Any | None = None
+    role: str | None = None
+    jwt_token: str | None = None
+    is_db_user: bool = True  # False for Anonymous (no DB row)
 
 
 @dataclass
@@ -119,10 +121,17 @@ def generate_secure_password(length: int = 16) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def generate_jwt(sub: str, role: str, secret: str) -> str:
+def generate_jwt(
+    sub: str,
+    role: str,
+    secret: str,
+    extra_claims: dict[str, Any] | None = None,
+) -> str:
     """Generates an RFC 7519 compliant HS256 JWT using standard library."""
     header = {"alg": "HS256", "typ": "JWT"}
     payload = {"sub": sub, "role": role}
+    if extra_claims:
+        payload.update(extra_claims)
 
     def b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
@@ -286,9 +295,24 @@ class SandboxUserSeeder:
         sub_b = str(id_b) if id_b is not None else email_b
         sub_admin = str(id_admin) if id_admin is not None else email_admin
 
-        jwt_a = generate_jwt(sub_a, "authenticated", self.jwt_secret)
-        jwt_b = generate_jwt(sub_b, "authenticated", self.jwt_secret)
-        jwt_admin = generate_jwt(sub_admin, "admin", self.jwt_secret)
+        jwt_a = generate_jwt(
+            sub_a,
+            "authenticated",
+            self.jwt_secret,
+            extra_claims={"userId": id_a, "email": email_a},
+        )
+        jwt_b = generate_jwt(
+            sub_b,
+            "authenticated",
+            self.jwt_secret,
+            extra_claims={"userId": id_b, "email": email_b},
+        )
+        jwt_admin = generate_jwt(
+            sub_admin,
+            "admin",
+            self.jwt_secret,
+            extra_claims={"userId": id_admin, "email": email_admin},
+        )
 
         user_a = TestIdentity(
             name="User A",

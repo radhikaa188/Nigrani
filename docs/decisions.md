@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-06 | http_request_as helper with structured evidence and strict token redaction | Uniform API for test templates across Node apps and PostgREST with identity normalization, error handling, and zero token leaks in evidence |
 | 2026-11-06 | Schema-flexible SandboxUserSeeder module | Allows seeding User A, User B, Admin, Anonymous across arbitrary imported app schemas with automatic ephemeral cleanup |
 | 2026-11-06 | PostgREST 12.2.0 + Postgres 15.8 with auth.uid() function for Supabase sandbox | Replicates Supabase RLS and JWT handling without the memory overhead of the full local Supabase stack |
 | 2026-11-06 | Pinned node:20.18.0-alpine3.20 base image for sandbox Node apps | Minimal Alpine footprint, reproducible build, built-in non-root node user (uid 1000) |
