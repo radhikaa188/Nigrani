@@ -16,23 +16,18 @@ If the create step fails or the server does not respond, returns ERROR (never FA
 from __future__ import annotations
 
 import contextlib
-import io
 import os
-import secrets
-import shutil
 import socket
 import subprocess
 import sys
-import tarfile
-import tempfile
-import time
 import urllib.error
 import urllib.request
-from collections.abc import Generator, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from sandbox.http_request_as import http_request_as
+from sandbox.runner import running_notes_container
 from sandbox.seed_users import SeedResult, TestIdentity
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -304,92 +299,6 @@ def run_ownership_test(
         "evidence": read_resp.evidence,
         "details": f"Unexpected HTTP response status {read_resp.status_code} from PostgREST: {read_resp.raw_body}",
     }
-
-
-@contextlib.contextmanager
-def running_notes_container(
-    tag: str, host_port: int | None = None
-) -> Generator[str, None, None]:
-    """Builds and runs a sandbox container for a specific golden/notes-app git tag."""
-    port = host_port or find_free_port()
-    run_id = secrets.token_hex(4)
-    image_tag = f"nigrani-notes:{tag}"
-    container_name = f"nigrani-notes-runner-{tag}-{run_id}"
-
-    # Extract tag code cleanly into a temp directory
-    temp_dir = tempfile.mkdtemp(prefix=f"notes_{tag}_")
-    try:
-        archive_res = subprocess.run(
-            ["git", "-C", str(NOTES_APP_DIR), "archive", tag],
-            capture_output=True,
-            check=True,
-        )
-        with tarfile.open(fileobj=io.BytesIO(archive_res.stdout), mode="r:*") as tar:
-            tar.extractall(path=temp_dir)
-
-        # Build image
-        subprocess.run(
-            [
-                "docker",
-                "build",
-                "-f",
-                str(SANDBOX_DOCKERFILE),
-                "-t",
-                image_tag,
-                temp_dir,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        # Run container connected to notes-app_default network
-        run_cmd = [
-            "docker",
-            "run",
-            "-d",
-            "--name",
-            container_name,
-            "--network",
-            "notes-app_default",
-            "-e",
-            f"PORT={port}",
-            "-e",
-            "DATABASE_URL=postgresql://notes_user:notes_password@notes-db:5432/notes_db",  # pragma: allowlist secret
-            "-e",
-            "JWT_SECRET=dev-secret-key-notes",  # pragma: allowlist secret
-            "-p",
-            f"{port}:{port}",
-            image_tag,
-        ]
-        subprocess.run(run_cmd, capture_output=True, text=True, check=True)
-
-        base_url = f"http://localhost:{port}"
-
-        # Wait for container /health to be responsive
-        deadline = time.perf_counter() + 15.0
-        healthy = False
-        while time.perf_counter() < deadline:
-            try:
-                with urllib.request.urlopen(f"{base_url}/health", timeout=1.0) as resp:
-                    if resp.status == 200:
-                        healthy = True
-                        break
-            except (OSError, urllib.error.URLError):
-                time.sleep(0.2)
-
-        if not healthy:
-            raise RuntimeError(
-                f"Notes container ({tag}) failed to respond on /health within timeout"
-            )
-
-        yield base_url
-
-    finally:
-        subprocess.run(
-            ["docker", "rm", "-f", container_name], capture_output=True, check=False
-        )
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

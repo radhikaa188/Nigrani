@@ -182,6 +182,8 @@ class SandboxUserSeeder:
             "-A",
             "-F",
             "|",
+            "-v",
+            "ON_ERROR_STOP=1",
         ]
         res = subprocess.run(
             cmd,
