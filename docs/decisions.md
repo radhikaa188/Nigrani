@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-06 | PostgREST 12.2.0 + Postgres 15.8 with auth.uid() function for Supabase sandbox | Replicates Supabase RLS and JWT handling without the memory overhead of the full local Supabase stack |
 | 2026-11-06 | Pinned node:20.18.0-alpine3.20 base image for sandbox Node apps | Minimal Alpine footprint, reproducible build, built-in non-root node user (uid 1000) |
 | 2026-11-05 | Worktree-based test runner for version matrices | Avoids dirty in-place checkouts and preserves clean workspace state across tag evaluations |
 | 2026-11-05 | Ollama qwen2.5-coder:3b measured: ~2.2s response time warm, ~137MB RAM idle working set | Validates local CPU execution speed on 16GB laptop |

@@ -1,0 +1,42 @@
+services:
+  sandbox-db:
+    image: postgres:15.8-alpine
+    container_name: nigrani-sandbox-db
+    restart: unless-stopped
+    ports:
+      - "${SANDBOX_DB_PORT:-5435}:5432"
+    environment:
+      POSTGRES_DB: ${SANDBOX_DB_NAME:-sandbox_db}
+      POSTGRES_USER: ${SANDBOX_DB_USER:-sandbox_admin}
+      POSTGRES_PASSWORD: ${SANDBOX_DB_PASSWORD:-sandbox_admin_password} # pragma: allowlist secret
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SANDBOX_DB_USER:-sandbox_admin} -d ${SANDBOX_DB_NAME:-sandbox_db}"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - sandbox-net
+
+  sandbox-postgrest:
+    image: postgrest/postgrest:v12.2.0
+    container_name: nigrani-sandbox-postgrest
+    restart: unless-stopped
+    ports:
+      - "${SANDBOX_POSTGREST_PORT:-5436}:3000"
+    environment:
+      PGRST_DB_URI: postgres://${SANDBOX_AUTHENTICATOR_USER:-authenticator}:${SANDBOX_AUTHENTICATOR_PASSWORD:-authenticator_password}@sandbox-db:5432/${SANDBOX_DB_NAME:-sandbox_db} # pragma: allowlist secret
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${SANDBOX_JWT_SECRET}
+      PGRST_SERVER_PORT: 3000
+    depends_on:
+      sandbox-db:
+        condition: service_healthy
+    networks:
+      - sandbox-net
+
+networks:
+  sandbox-net:
+    name: nigrani_sandbox_net

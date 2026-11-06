@@ -65,7 +65,7 @@
 
 ## Stage 2: Sandbox and test templates
 - [x] Dockerfile for running a Node app
-- [ ] Postgres + PostgREST containers with an `auth.uid()` helper
+- [x] Postgres + PostgREST containers with an `auth.uid()` helper
 - [ ] Seed User A, User B, Admin, Anonymous (generated passwords)
 - [ ] `http_request_as(user, request)` helper
 - [ ] Template: ownership
@@ -251,7 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
-| 2026-11-06 | Stage 2 (Task 11: generic sandbox Dockerfile) | Created sandbox/node-app/Dockerfile and .dockerignore, verified non-root and /health | Stage 2 (Task 12: Postgres + PostgREST containers) |
+| 2026-11-06 | Stage 2 (Task 11 & 13: generic sandbox Dockerfile + Postgres/PostgREST auth.uid()) | Created sandbox Dockerfile, added sandbox-db & sandbox-postgrest with auth.uid() and verified RLS isolation | Stage 2 (Seed users & test templates) |
 | 2026-11-05 | Stage 1 (Notes app v1-v3, ownership regression test runner) | Notes app v1, v2, v3 built & tagged; run_ownership_test.py automated matrix detection | Stage 2 (Sandbox and test templates) |
 
 ## Parking lot (stretch, not planned)
