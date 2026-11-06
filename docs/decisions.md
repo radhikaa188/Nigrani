@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-06 | Unauthenticated template: PostgREST anonymous PASS condition | In sandbox setup (PGRST_DB_ANON_ROLE='anon'), unauthenticated requests execute under 'anon' role; RLS filtering returns HTTP 200 with empty list [], or 401/403 if ungranted |
 | 2026-11-06 | Dual-target ownership template with differential verdict logic | Evaluates PASS/FAIL across both full REST backends (denial codes) and PostgREST gateways (empty RLS query returns) with ERROR safety on creation/connection faults |
 | 2026-11-06 | http_request_as helper with structured evidence and strict token redaction | Uniform API for test templates across Node apps and PostgREST with identity normalization, error handling, and zero token leaks in evidence |
 | 2026-11-06 | Schema-flexible SandboxUserSeeder module | Allows seeding User A, User B, Admin, Anonymous across arbitrary imported app schemas with automatic ephemeral cleanup |
