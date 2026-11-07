@@ -3,3 +3,6 @@ uvicorn[standard]==0.54.0
 python-dotenv==1.2.4
 pydantic==2.14.2
 pydantic-settings==2.16.2
+alembic==1.20.1 # Database migrations
+sqlalchemy==2.1.8 # SQL toolkit and ORM for database models
+psycopg[binary]==3.3.8 # PostgreSQL driver for Python

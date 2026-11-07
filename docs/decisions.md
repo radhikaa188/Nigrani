@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-07 | Platform database: local Docker Postgres on port 5433 with Alembic migrations | Runs locally with zero cloud dependence or cost; mapped to port 5433 to prevent port collisions on systems with native Postgres on 5432; schema versioned with Alembic and SQLAlchemy 2.0 |
 | 2026-11-06 | Sandbox runner hard limits & guarantees | Enforces 512MB memory limit, 60s configurable timeout with container kill, non-root user (node uid 1000), internal network isolation, and try/finally auto-destruction with zero leftover containers |
 | 2026-11-06 | Validation template side-effect verdict model | Distinguishes safe input rejection (400/422/sanitized 201) as PASS, unhandled server crashes (500) as ERROR, and destructive state mutation as FAIL |
 | 2026-11-06 | RLS template thin wrapper around ownership logic | Reuses proven differential target logic with unfiltered queries (GET /table_name) to verify auth.uid() row isolation across PostgREST tables |
@@ -30,7 +31,6 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 | Question | Needed by |
 |---|---|
 | Project name (Nigrani preferred; check PyPI, npm, GitHub, domain) | Stage 0 |
-| Platform database: Supabase free tier or local Postgres | Stage 3 |
 | Final list and wording of the 15 files | Stage 11 |
 | Which apps are the evaluation (golden) apps | Stage 13 |
 | Which model sizes the laptop really sustains | Stage 7 |
