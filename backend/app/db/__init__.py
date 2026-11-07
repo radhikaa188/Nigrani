@@ -9,6 +9,7 @@ from backend.app.db.models import (
     ProtectionResult,
     Regression,
     Run,
+    User,
     Version,
 )
 from backend.app.db.session import SessionLocal, engine, get_db
@@ -21,6 +22,7 @@ __all__ = [
     "Regression",
     "Run",
     "SessionLocal",
+    "User",
     "Version",
     "engine",
     "get_db",

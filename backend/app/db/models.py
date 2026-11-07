@@ -1,7 +1,8 @@
 """
-Core SQLAlchemy Models for Nigrani Platform Database (Stage 3, Task 22).
+Core SQLAlchemy Models for Nigrani Platform Database.
 
-Implements the 6 core tables specified in docs/database.md:
+Implements tables specified in docs/database.md:
+- users (Platform login & role mapping for Supabase Auth)
 - projects
 - versions
 - runs
@@ -34,6 +35,31 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
 
 
+class User(Base):
+    """Platform user mapping Supabase Auth identity to local role and profile."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    email: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('owner', 'viewer')",
+            name="chk_users_role",
+        ),
+    )
+
+    # Relationships
+    projects: Mapped[list[Project]] = relationship("Project", back_populates="owner")
+
+
 class Project(Base):
     """Target software project monitored by Nigrani."""
 
@@ -43,7 +69,10 @@ class Project(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -65,6 +94,7 @@ class Project(Base):
     )
 
     # Relationships
+    owner: Mapped[User | None] = relationship("User", back_populates="projects")
     versions: Mapped[list[Version]] = relationship(
         "Version", back_populates="project", cascade="all, delete-orphan"
     )

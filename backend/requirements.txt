@@ -6,3 +6,5 @@ pydantic-settings==2.16.2
 alembic==1.20.1 # Database migrations
 sqlalchemy==2.1.8 # SQL toolkit and ORM for database models
 psycopg[binary]==3.3.8 # PostgreSQL driver for Python
+pyjwt==2.15.1 # JWT verification for platform Supabase Auth tokens
+httpx==0.28.1 # HTTP client and test client for FastAPI integration tests
