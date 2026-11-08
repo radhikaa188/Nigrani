@@ -6,6 +6,7 @@ from typing import Any
 import uuid
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,11 +22,35 @@ from backend.app.auth import (
 )
 from backend.app.db.models import User
 from backend.app.db.session import get_db
+from backend.app.importer import import_project_folder
 
 app = FastAPI(title="Nigrani API", version="0.1.0")
 
 api_v1_router = APIRouter(prefix="/api/v1")
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class ProjectImportRequest(BaseModel):
+    """Payload for importing a target project folder."""
+
+    source_path: str | None = None
+    path: str | None = None
+    project_name: str | None = None
+
+
+class ProjectImportResponse(BaseModel):
+    """Response payload for a successful project import."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: str
+    project_name: str
+    stack: str
+    version_id: str
+    version_number: int
+    commit_hash: str | None
+    trigger: str
+    snapshot_ref: str
 
 
 @api_v1_router.get("/health")
@@ -124,6 +149,45 @@ def get_me(current_user: User = Depends(get_current_user)) -> dict[str, str]:
         "id": str(current_user.id),
         "email": current_user.email,
         "role": current_user.role,
+    }
+
+
+@api_v1_router.post(
+    "/projects/{project_id}/import",
+    response_model=ProjectImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_project(
+    project_id: uuid.UUID,
+    payload: ProjectImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Import a local target application folder, detect stack, and create Version."""
+    source_path = payload.source_path or payload.path
+    if not source_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing source_path in request body",
+        )
+
+    project, version = import_project_folder(
+        project_id=project_id,
+        source_path=source_path,
+        current_user=current_user,
+        db=db,
+        project_name=payload.project_name,
+    )
+
+    return {
+        "project_id": str(project.id),
+        "project_name": project.name,
+        "stack": project.stack or "",
+        "version_id": str(version.id),
+        "version_number": version.number,
+        "commit_hash": version.commit_hash,
+        "trigger": version.trigger,
+        "snapshot_ref": version.snapshot_ref or "",
     }
 
 

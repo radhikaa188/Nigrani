@@ -12,7 +12,7 @@
 | 0 | Setup and tracking | Done | main | 2026-11-05 | 2026-11-05 | Setup verified |
 | 1 | Prove the idea (CLI only) | Done | stage-1-slice / stage-1-done | 2026-11-05 | 2026-11-05 | Notes app v1-v3; matrix output: PASS, PASS, FAIL (v3) |
 | 2 | Sandbox and test templates | Done | stage-2-sandbox / stage-2-done | 2026-11-06 | 2026-11-06 | All 5 templates verified across Notes v1-v3, PostgREST, broken build; zero leftover containers |
-| 3 | Backend core | In progress | stage-3-backend | 2026-11-07 | | Core DB migrations, users table with password_hash, self-hosted JWT+bcrypt auth complete |
+| 3 | Backend core | In progress | stage-3-backend | 2026-11-07 | | Core DB migrations, users table with password_hash, self-hosted JWT+bcrypt auth, folder importer with stack detection complete |
 | 4 | Regression engine (core) | Not started | stage-4-regression | | | |
 | 5 | Dashboard v1 | Not started | stage-5-dashboard | | | |
 | A | **Checkpoint A: core demo** | Not started | v0.1 | | | |
@@ -84,7 +84,7 @@
 - [x] Decide platform database (Supabase free tier or local Postgres) and log it
 - [x] Migrations for core tables (projects, versions, runs, protections, protection_results, regressions); add others when first needed and keep `database.md` in sync
 - [x] Login: Self-hosted auth (bcrypt password hashing, JWT_SECRET, register/login endpoints, JWT check, roles)
-- [ ] Import from folder, ZIP and GitHub; creates versions
+- [x] Import from folder (with stack detection and version creation); ZIP and GitHub to follow
 - [ ] Redis + RQ queue; worker with concurrency 1
 - [ ] Endpoints from `api.md`: projects, import, versions, runs, protections, results
 - [ ] Run status polling works
@@ -251,6 +251,7 @@
 ## Session log
 | Date | Worked on | Done | Next |
 |---|---|---|---|
+| 2026-11-08 | Stage 3 (Task 24: Folder Importer & Stack Detection) | Built POST /api/v1/projects/{project_id}/import with folder path; stack detection for node-express with clear 422 for unsupported stacks; git commit hash extraction; path traversal rejection (400); creates/persists Project and Version records in platform DB | Stage 3 (Task 25: Redis + RQ Queue & Worker) |
 | 2026-11-08 | Stage 3 (Task 23 REDO: Self-hosted Auth with bcrypt + JWT) | Rebuilt platform auth as self-hosted matching golden/notes-app; added password_hash to users table, implemented /auth/register and /auth/login with bcrypt & platform JWT_SECRET; tested 4 scenarios | Stage 3 (Task 24: Project import) |
 | 2026-11-07 | Stage 3 (Task 22: Platform DB migrations & Alembic setup) | Added Alembic + SQLAlchemy + Psycopg; created 6 core platform tables in nigrani-db (port 5433); round-trip test passed | Stage 3 (Task 23: Login & Auth) |
 | 2026-11-06 | Stage 2 (Tasks 19-21: RLS, validation, limits & full matrix) | Built rls.py, validation.py, runner.py hardening (memory 512MB, timeout 60s, non-root, zero leftovers); ran full Stage 2 matrix across Notes v1-v3, PostgREST, broken build | Stage 3 (Backend core) |

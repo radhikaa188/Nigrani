@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-08 | Folder importer with strict stack detection & path traversal boundaries | Dedicated /projects/{id}/import endpoint validates source folder within allowed import roots, inspects package.json dependencies for 'node-express' (rejects others with 422), reads HEAD git commit hash, and persists Version row |
 | 2026-11-08 | Platform auth: self-hosted bcrypt hashing + signed HS256 JWT (scrapped Supabase Auth) | Matches golden/notes-app pattern: bcrypt password hashing in users table, JWT_SECRET from env, zero external Supabase dependency |
 | 2026-11-07 | Platform database: local Docker Postgres on port 5433 with Alembic migrations | Runs locally with zero cloud dependence or cost; mapped to port 5433 to prevent port collisions on systems with native Postgres on 5432; schema versioned with Alembic and SQLAlchemy 2.0 |
 | 2026-11-06 | Sandbox runner hard limits & guarantees | Enforces 512MB memory limit, 60s configurable timeout with container kill, non-root user (node uid 1000), internal network isolation, and try/finally auto-destruction with zero leftover containers |
