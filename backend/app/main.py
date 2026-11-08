@@ -22,7 +22,10 @@ from backend.app.auth import (
 )
 from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.importer import import_project_folder
+from backend.app.importer import (
+    import_github_repository,
+    import_project_folder,
+)
 
 app = FastAPI(title="Nigrani API", version="0.1.0")
 
@@ -31,10 +34,18 @@ auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class ProjectImportRequest(BaseModel):
-    """Payload for importing a target project folder."""
+    """Payload for importing a target project folder or repository."""
 
     source_path: str | None = None
     path: str | None = None
+    repository_url: str | None = None
+    project_name: str | None = None
+
+
+class GitHubImportRequest(BaseModel):
+    """Payload for importing a project from a public GitHub repository."""
+
+    repository_url: str
     project_name: str | None = None
 
 
@@ -163,17 +174,57 @@ def import_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Import a local target application folder, detect stack, and create Version."""
-    source_path = payload.source_path or payload.path
-    if not source_path:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing source_path in request body",
+    """Import a target project from a local folder or a GitHub repository URL."""
+    if payload.repository_url:
+        project, version = import_github_repository(
+            project_id=project_id,
+            repository_url=payload.repository_url,
+            current_user=current_user,
+            db=db,
+            project_name=payload.project_name,
+        )
+    else:
+        source_path = payload.source_path or payload.path
+        if not source_path:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing source_path or repository_url in request body",
+            )
+        project, version = import_project_folder(
+            project_id=project_id,
+            source_path=source_path,
+            current_user=current_user,
+            db=db,
+            project_name=payload.project_name,
         )
 
-    project, version = import_project_folder(
+    return {
+        "project_id": str(project.id),
+        "project_name": project.name,
+        "stack": project.stack or "",
+        "version_id": str(version.id),
+        "version_number": version.number,
+        "commit_hash": version.commit_hash,
+        "trigger": version.trigger,
+        "snapshot_ref": version.snapshot_ref or "",
+    }
+
+
+@api_v1_router.post(
+    "/projects/{project_id}/import/github",
+    response_model=ProjectImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_project_github(
+    project_id: uuid.UUID,
+    payload: GitHubImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Import a target project directly from a public GitHub repository."""
+    project, version = import_github_repository(
         project_id=project_id,
-        source_path=source_path,
+        repository_url=payload.repository_url,
         current_user=current_user,
         db=db,
         project_name=payload.project_name,

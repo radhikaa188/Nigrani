@@ -27,6 +27,7 @@ yarn-debug.log*
 
 # Evaluation and test fixture apps (independent git repos)
 golden/notes-app/
+snapshots/
 
 # OS & IDE
 .DS_Store

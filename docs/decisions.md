@@ -5,6 +5,7 @@ Record every choice that changes the plan, with the date and the reason. Newest 
 ## Made
 | Date | Decision | Reason |
 |---|---|---|
+| 2026-11-08 | Direct GitHub repository importer with URL validation, depth-1 clone, & snapshot retention | Added /projects/{id}/import/github endpoint with strict HTTPS github.com URL validation (regex, no credentials, no query/fragments), safe subprocess depth-1 shallow clone with GIT_TERMINAL_PROMPT=0, 422 stack rejection before persistence, ephemeral temp clone cleanup, and snapshot retention in managed storage |
 | 2026-11-08 | Folder importer with strict stack detection & path traversal boundaries | Dedicated /projects/{id}/import endpoint validates source folder within allowed import roots, inspects package.json dependencies for 'node-express' (rejects others with 422), reads HEAD git commit hash, and persists Version row |
 | 2026-11-08 | Platform auth: self-hosted bcrypt hashing + signed HS256 JWT (scrapped Supabase Auth) | Matches golden/notes-app pattern: bcrypt password hashing in users table, JWT_SECRET from env, zero external Supabase dependency |
 | 2026-11-07 | Platform database: local Docker Postgres on port 5433 with Alembic migrations | Runs locally with zero cloud dependence or cost; mapped to port 5433 to prevent port collisions on systems with native Postgres on 5432; schema versioned with Alembic and SQLAlchemy 2.0 |
