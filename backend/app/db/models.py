@@ -2,7 +2,7 @@
 Core SQLAlchemy Models for Nigrani Platform Database.
 
 Implements tables specified in docs/database.md:
-- users (Platform login & role mapping for Supabase Auth)
+- users (Platform user authentication and role mapping)
 - projects
 - versions
 - runs
@@ -36,15 +36,18 @@ from backend.app.db.base import Base
 
 
 class User(Base):
-    """Platform user mapping Supabase Auth identity to local role and profile."""
+    """Platform user for self-hosted authentication and role mapping."""
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
     email: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
     )
-    role: Mapped[str] = mapped_column(String(32), nullable=False, default="viewer")
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="owner")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

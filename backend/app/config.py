@@ -10,9 +10,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
-    SUPABASE_URL: str | None = None
-    SUPABASE_ANON_KEY: str | None = None
-    SUPABASE_JWT_SECRET: str | None = None
+    JWT_SECRET: str | None = None
     MODEL_ADAPTER: str | None = None
     OLLAMA_URL: str | None = None
     OLLAMA_MODEL: str | None = None

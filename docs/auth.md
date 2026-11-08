@@ -3,9 +3,9 @@
 Two separate things: **(A)** logging into the platform, **(B)** the fake users the platform creates to test the target app.
 
 ## A. Platform login
-- Supabase Auth (email and password, plus GitHub login).
+- Self-hosted auth: email and password, bcrypt password hashing, and platform-issued JWT.
 - Dashboard holds the session; every API call sends the JWT as `Authorization: Bearer`.
-- Backend verifies the token on every request.
+- Backend verifies the token on every request using `JWT_SECRET`.
 
 | Role | Can do |
 |---|---|
