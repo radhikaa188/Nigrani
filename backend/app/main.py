@@ -242,7 +242,6 @@ def import_project_github(
     }
 
 
-# Mount auth routes under /api/v1/auth and provide root /auth alias
+# Mount auth routes under /api/v1/auth
 api_v1_router.include_router(auth_router)
-app.include_router(auth_router)
 app.include_router(api_v1_router)

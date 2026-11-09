@@ -50,13 +50,20 @@ def test_auth_register_creates_user():
         assert db_user.password_hash.startswith("$2")
         assert verify_password(test_password, db_user.password_hash)
 
-        # Test root alias /auth/register rejection on duplicate email
+        # Verify duplicate email rejection at /api/v1/auth/register
         dup_res = client.post(
-            "/auth/register",
+            "/api/v1/auth/register",
             json={"email": test_email, "password": test_password},
         )
         assert dup_res.status_code == 400
         assert dup_res.json()["detail"] == "Email already registered"
+
+        # Verify non-prefixed /auth/register is NOT registered (404 Not Found)
+        non_prefixed_res = client.post(
+            "/auth/register",
+            json={"email": test_email, "password": test_password},
+        )
+        assert non_prefixed_res.status_code == 404
 
     finally:
         if user_id:
@@ -95,13 +102,12 @@ def test_auth_login_with_correct_credentials():
         assert login_data["user"]["email"] == test_email
         assert login_data["user"]["id"] == str(user_id)
 
-        # Also verify login via root alias /auth/login
+        # Verify non-prefixed /auth/login is NOT registered (404 Not Found)
         root_login_res = client.post(
             "/auth/login",
             json={"email": test_email, "password": test_password},
         )
-        assert root_login_res.status_code == 200
-        assert "access_token" in root_login_res.json()
+        assert root_login_res.status_code == 404
 
     finally:
         if user_id:
