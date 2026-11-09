@@ -2,12 +2,13 @@
 Main FastAPI application entrypoint for Nigrani backend.
 """
 
+from datetime import datetime, timezone
 from typing import Any
 import uuid
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import (
@@ -20,7 +21,7 @@ from app.auth import (
     hash_password,
     verify_password,
 )
-from app.db.models import User
+from app.db.models import Project, Protection, User, Version
 from app.db.session import get_db
 from app.importer import (
     import_github_repository,
@@ -94,6 +95,77 @@ class JobStatusResponse(BaseModel):
     enqueued_at: str | None = None
     started_at: str | None = None
     ended_at: str | None = None
+
+
+VALID_TEST_TEMPLATES = {"ownership", "unauthenticated", "role", "rls", "validation"}
+VALID_PROTECTION_STATES = {"candidate", "confirmed", "rejected"}
+
+
+class ProjectSummaryResponse(BaseModel):
+    """Summary representation of a target software project."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    stack: str | None = None
+    source_type: str
+    source_ref: str
+    default_branch: str
+    created_at: str
+    latest_version_number: int | None = None
+
+
+class VersionResponse(BaseModel):
+    """Detailed representation of a project version record."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    number: int
+    commit_hash: str | None = None
+    parent_version_id: str | None = None
+    trigger: str
+    snapshot_ref: str | None = None
+    created_at: str
+
+
+class ProtectionCreateRequest(BaseModel):
+    """Payload to add a protection manually to a project."""
+
+    code: str
+    description: str
+    test_template: str
+    test_params: dict[str, Any] | None = None
+    related_node_ids: list[Any] | None = None
+
+
+class ProtectionPatchRequest(BaseModel):
+    """Payload to update/confirm a protection's state or attributes."""
+
+    state: str | None = None
+    description: str | None = None
+    test_params: dict[str, Any] | None = None
+
+
+class ProtectionResponse(BaseModel):
+    """Representation of an established protection or candidate invariant."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    code: str
+    description: str
+    test_template: str
+    state: str
+    source: str
+    related_node_ids: list[Any] = []
+    test_params: dict[str, Any] = {}
+    confirmed_by: str | None = None
+    confirmed_at: str | None = None
+    created_at: str
 
 
 @api_v1_router.get("/health")
@@ -304,6 +376,348 @@ def get_queue_job_status(
 ) -> dict[str, Any]:
     """Inspect the status and result of a background job from Redis."""
     return get_job_info(job_id)
+
+
+# --- Projects & Versions Read/List Endpoints (Stage 3, Task 26) ---
+
+
+@api_v1_router.get(
+    "/projects",
+    response_model=list[ProjectSummaryResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_projects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List all projects belonging to the currently authenticated user."""
+    projects = db.scalars(
+        select(Project)
+        .where(Project.owner_id == current_user.id)
+        .order_by(Project.created_at.desc())
+    ).all()
+
+    result: list[dict[str, Any]] = []
+    for p in projects:
+        latest_v = db.scalar(
+            select(func.max(Version.number)).where(Version.project_id == p.id)
+        )
+        result.append(
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "stack": p.stack,
+                "source_type": p.source_type,
+                "source_ref": p.source_ref,
+                "default_branch": p.default_branch,
+                "created_at": p.created_at.isoformat(),
+                "latest_version_number": latest_v,
+            }
+        )
+    return result
+
+
+@api_v1_router.get(
+    "/projects/{project_id}",
+    response_model=ProjectSummaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_summary(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Retrieve summary details for a single project owned by current user."""
+    project = db.get(Project, project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    latest_v = db.scalar(
+        select(func.max(Version.number)).where(Version.project_id == project.id)
+    )
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "stack": project.stack,
+        "source_type": project.source_type,
+        "source_ref": project.source_ref,
+        "default_branch": project.default_branch,
+        "created_at": project.created_at.isoformat(),
+        "latest_version_number": latest_v,
+    }
+
+
+@api_v1_router.get(
+    "/projects/{project_id}/versions",
+    response_model=list[VersionResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_project_versions(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List all versions for a project owned by user, ordered by version number."""
+    project = db.get(Project, project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    versions = db.scalars(
+        select(Version)
+        .where(Version.project_id == project_id)
+        .order_by(Version.number.asc())
+    ).all()
+    return [
+        {
+            "id": str(v.id),
+            "project_id": str(v.project_id),
+            "number": v.number,
+            "commit_hash": v.commit_hash,
+            "parent_version_id": str(v.parent_version_id)
+            if v.parent_version_id
+            else None,
+            "trigger": v.trigger,
+            "snapshot_ref": v.snapshot_ref,
+            "created_at": v.created_at.isoformat(),
+        }
+        for v in versions
+    ]
+
+
+@api_v1_router.get(
+    "/versions/{version_id}",
+    response_model=VersionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_version_detail(
+    version_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Retrieve detail for a single project version."""
+    version = db.get(Version, version_id)
+    if (
+        not version
+        or not version.project
+        or version.project.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version not found",
+        )
+
+    return {
+        "id": str(version.id),
+        "project_id": str(version.project_id),
+        "number": version.number,
+        "commit_hash": version.commit_hash,
+        "parent_version_id": str(version.parent_version_id)
+        if version.parent_version_id
+        else None,
+        "trigger": version.trigger,
+        "snapshot_ref": version.snapshot_ref,
+        "created_at": version.created_at.isoformat(),
+    }
+
+
+# --- Protections Endpoints (Stage 3, Task 26) ---
+
+
+@api_v1_router.get(
+    "/projects/{project_id}/protections",
+    response_model=list[ProtectionResponse],
+    status_code=status.HTTP_200_OK,
+)
+def list_project_protections(
+    project_id: uuid.UUID,
+    state: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List protections established for a project, optionally filtered by state."""
+    project = db.get(Project, project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    stmt = select(Protection).where(Protection.project_id == project_id)
+    if state:
+        stmt = stmt.where(Protection.state == state.strip().lower())
+    stmt = stmt.order_by(Protection.created_at.asc())
+
+    protections = db.scalars(stmt).all()
+    return [
+        {
+            "id": str(p.id),
+            "project_id": str(p.project_id),
+            "code": p.code,
+            "description": p.description,
+            "test_template": p.test_template,
+            "state": p.state,
+            "source": p.source,
+            "related_node_ids": p.related_node_ids or [],
+            "test_params": p.test_params or {},
+            "confirmed_by": p.confirmed_by,
+            "confirmed_at": p.confirmed_at.isoformat() if p.confirmed_at else None,
+            "created_at": p.created_at.isoformat(),
+        }
+        for p in protections
+    ]
+
+
+@api_v1_router.post(
+    "/projects/{project_id}/protections",
+    response_model=ProtectionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_project_protection(
+    project_id: uuid.UUID,
+    payload: ProtectionCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Add a protection manually to a project in candidate state."""
+    project = db.get(Project, project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    code = payload.code.strip()
+    description = payload.description.strip()
+    test_template = payload.test_template.strip().lower()
+
+    if not code or not description:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Code and description are required",
+        )
+
+    if test_template not in VALID_TEST_TEMPLATES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid test_template '{payload.test_template}'. Must be one of: {', '.join(sorted(VALID_TEST_TEMPLATES))}",
+        )
+
+    existing = db.scalar(
+        select(Protection).where(
+            Protection.project_id == project_id,
+            Protection.code == code,
+        )
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Protection with code '{code}' already exists for this project",
+        )
+
+    protection = Protection(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        code=code,
+        description=description,
+        test_template=test_template,
+        state="candidate",
+        source="developer",
+        test_params=payload.test_params or {},
+        related_node_ids=payload.related_node_ids or [],
+    )
+    db.add(protection)
+    db.commit()
+    db.refresh(protection)
+
+    return {
+        "id": str(protection.id),
+        "project_id": str(protection.project_id),
+        "code": protection.code,
+        "description": protection.description,
+        "test_template": protection.test_template,
+        "state": protection.state,
+        "source": protection.source,
+        "related_node_ids": protection.related_node_ids or [],
+        "test_params": protection.test_params or {},
+        "confirmed_by": protection.confirmed_by,
+        "confirmed_at": protection.confirmed_at.isoformat()
+        if protection.confirmed_at
+        else None,
+        "created_at": protection.created_at.isoformat(),
+    }
+
+
+@api_v1_router.patch(
+    "/protections/{protection_id}",
+    response_model=ProtectionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_protection(
+    protection_id: uuid.UUID,
+    payload: ProtectionPatchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Update a protection's state (candidate -> confirmed | rejected) or metadata."""
+    protection = db.get(Protection, protection_id)
+    if (
+        not protection
+        or not protection.project
+        or protection.project.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Protection not found",
+        )
+
+    if payload.state is not None:
+        new_state = payload.state.strip().lower()
+        if new_state not in VALID_PROTECTION_STATES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid state '{payload.state}'. Must be one of: {', '.join(sorted(VALID_PROTECTION_STATES))}",
+            )
+        protection.state = new_state
+        if new_state == "confirmed":
+            protection.confirmed_by = current_user.email
+            protection.confirmed_at = datetime.now(timezone.utc)
+        elif new_state == "candidate":
+            protection.confirmed_by = None
+            protection.confirmed_at = None
+
+    if payload.description is not None:
+        desc = payload.description.strip()
+        if desc:
+            protection.description = desc
+
+    if payload.test_params is not None:
+        protection.test_params = payload.test_params
+
+    db.commit()
+    db.refresh(protection)
+
+    return {
+        "id": str(protection.id),
+        "project_id": str(protection.project_id),
+        "code": protection.code,
+        "description": protection.description,
+        "test_template": protection.test_template,
+        "state": protection.state,
+        "source": protection.source,
+        "related_node_ids": protection.related_node_ids or [],
+        "test_params": protection.test_params or {},
+        "confirmed_by": protection.confirmed_by,
+        "confirmed_at": protection.confirmed_at.isoformat()
+        if protection.confirmed_at
+        else None,
+        "created_at": protection.created_at.isoformat(),
+    }
 
 
 # Mount auth routes under /api/v1/auth
