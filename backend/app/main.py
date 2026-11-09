@@ -27,7 +27,11 @@ from app.importer import (
     import_project_folder,
 )
 
-app = FastAPI(title="Nigrani API", version="0.1.0")
+app = FastAPI(
+    title="Nigrani API",
+    version="0.1.0",
+    swagger_ui_parameters={"persistAuthorization": True},
+)
 
 api_v1_router = APIRouter(prefix="/api/v1")
 auth_router = APIRouter(prefix="/auth", tags=["auth"])

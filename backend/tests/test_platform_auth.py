@@ -245,3 +245,32 @@ def test_get_me_unauthenticated_and_invalid():
     )
     assert res_expired.status_code == 401
     assert res_expired.json()["detail"] == "Token has expired"
+
+
+def test_openapi_http_bearer_security_scheme():
+    """6. OpenAPI schema includes HTTPBearer security scheme and locks protected endpoints."""
+    openapi = app.openapi()
+
+    # Verify HTTPBearer security scheme in components
+    assert "securitySchemes" in openapi.get("components", {})
+    schemes = openapi["components"]["securitySchemes"]
+    assert "HTTPBearer" in schemes
+    bearer_scheme = schemes["HTTPBearer"]
+    assert bearer_scheme["type"] == "http"
+    assert bearer_scheme["scheme"] == "bearer"
+
+    paths = openapi.get("paths", {})
+
+    # Protected endpoints must require HTTPBearer (lock icon in Swagger UI)
+    assert paths["/api/v1/me"]["get"]["security"] == [{"HTTPBearer": []}]
+    assert paths["/api/v1/projects/{project_id}/import"]["post"]["security"] == [
+        {"HTTPBearer": []}
+    ]
+    assert paths["/api/v1/projects/{project_id}/import/github"]["post"]["security"] == [
+        {"HTTPBearer": []}
+    ]
+
+    # Public endpoints must NOT require HTTPBearer (unlocked in Swagger UI)
+    assert paths["/api/v1/health"]["get"].get("security") is None
+    assert paths["/api/v1/auth/register"]["post"].get("security") is None
+    assert paths["/api/v1/auth/login"]["post"].get("security") is None

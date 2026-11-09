@@ -14,6 +14,7 @@ import uuid
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import jwt
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -21,6 +22,12 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.models import User
 from app.db.session import get_db
+
+# OpenAPI HTTPBearer security scheme (enables the Swagger UI 'Authorize' button and locks)
+http_bearer = HTTPBearer(
+    auto_error=False,
+    description="Paste platform JWT bearer token",
+)
 
 
 # --- Password Hashing Utilities ---
@@ -110,15 +117,17 @@ def verify_jwt(token: str, secret: str | None = None) -> dict[str, Any]:
 
 def get_current_user(
     request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer),
     db: Session = Depends(get_db),
 ) -> User:
     """
     FastAPI dependency that:
-    1. Reads Authorization: Bearer <token> header.
-    2. Verifies the JWT signature with platform JWT_SECRET.
-    3. Extracts the user ID (sub) and looks up the user in the database.
-    4. Attaches the user to request.state.user.
-    5. Returns the User model instance.
+    1. Declares HTTPBearer security scheme for OpenAPI / Swagger UI.
+    2. Reads Authorization: Bearer <token> header.
+    3. Verifies the JWT signature with platform JWT_SECRET.
+    4. Extracts the user ID (sub) and looks up the user in the database.
+    5. Attaches the user to request.state.user.
+    6. Returns the User model instance.
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header:
@@ -128,15 +137,20 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    parts = auth_header.strip().split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+    if (
+        not credentials
+        or not credentials.scheme
+        or credentials.scheme.lower() != "bearer"
+        or not credentials.credentials
+        or not credentials.credentials.strip()
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header must follow format: Bearer <token>",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = parts[1].strip()
+    token = credentials.credentials.strip()
     payload = verify_jwt(token)
 
     sub_claim = payload.get("sub") or payload.get("userId")
