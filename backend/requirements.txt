@@ -9,3 +9,5 @@ psycopg[binary]==3.3.8 # PostgreSQL driver for Python
 bcrypt==5.0.0 # Password hashing with bcrypt for self-hosted platform auth
 pyjwt==2.15.1 # JWT generation and signature verification for platform auth
 httpx==0.28.1 # HTTP client and test client for FastAPI integration tests
+redis==8.1.0 # Redis client for job queue and caching
+rq==3.0.0 # Background Redis Queue for long-running worker tasks

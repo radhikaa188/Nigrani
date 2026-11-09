@@ -26,6 +26,8 @@ from app.importer import (
     import_github_repository,
     import_project_folder,
 )
+from app.jobs import simulate_work_job
+from app.queue import get_job_info, get_queue
 
 app = FastAPI(
     title="Nigrani API",
@@ -66,6 +68,32 @@ class ProjectImportResponse(BaseModel):
     commit_hash: str | None
     trigger: str
     snapshot_ref: str
+
+
+class TestQueueRequest(BaseModel):
+    """Optional payload for enqueueing a test background job."""
+
+    duration_seconds: float = 3.0
+
+
+class TestQueueResponse(BaseModel):
+    """Response payload when a background job is enqueued."""
+
+    job_id: str
+    status: str
+    queue: str
+
+
+class JobStatusResponse(BaseModel):
+    """Response payload for background job status inspection."""
+
+    job_id: str
+    status: str
+    result: Any | None = None
+    error: str | None = None
+    enqueued_at: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
 
 
 @api_v1_router.get("/health")
@@ -243,6 +271,39 @@ def import_project_github(
         "trigger": version.trigger,
         "snapshot_ref": version.snapshot_ref or "",
     }
+
+
+@api_v1_router.post(
+    "/test-queue",
+    response_model=TestQueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def enqueue_test_queue_job(
+    payload: TestQueueRequest | None = None,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Enqueue a simulated background job to Redis via RQ and return immediately."""
+    duration = payload.duration_seconds if payload is not None else 3.0
+    queue = get_queue()
+    job = queue.enqueue(simulate_work_job, duration_seconds=duration)
+    return {
+        "job_id": job.id,
+        "status": "queued",
+        "queue": queue.name,
+    }
+
+
+@api_v1_router.get(
+    "/jobs/{job_id}",
+    response_model=JobStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_queue_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Inspect the status and result of a background job from Redis."""
+    return get_job_info(job_id)
 
 
 # Mount auth routes under /api/v1/auth
