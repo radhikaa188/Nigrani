@@ -11,8 +11,8 @@ Validates:
 import uuid
 from sqlalchemy import select
 
-from backend.app.db.models import Project, Protection, ProtectionResult, Run, Version
-from backend.app.db.session import SessionLocal
+from app.db.models import Project, Protection, ProtectionResult, Run, Version
+from app.db.session import SessionLocal
 
 
 def test_platform_db_roundtrip():

@@ -13,9 +13,9 @@ BACKEND_ROOT = REPO_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from backend.app.db.base import Base  # noqa: E402
-import backend.app.db.models  # noqa: E402, F401
-from backend.app.db.session import DATABASE_URL  # noqa: E402
+from app.db.base import Base  # noqa: E402
+import app.db.models  # noqa: E402, F401
+from app.db.session import DATABASE_URL  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

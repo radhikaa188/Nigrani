@@ -13,10 +13,10 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from backend.app.auth import create_access_token
-from backend.app.db.models import Project, User, Version
-from backend.app.db.session import SessionLocal
-from backend.app.main import app
+from app.auth import create_access_token
+from app.db.models import Project, User, Version
+from app.db.session import SessionLocal
+from app.main import app
 
 client = TestClient(app)
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.auth import (
+from app.auth import (
     LoginRequest,
     LoginResponse,
     RegisterRequest,
@@ -20,9 +20,9 @@ from backend.app.auth import (
     hash_password,
     verify_password,
 )
-from backend.app.db.models import User
-from backend.app.db.session import get_db
-from backend.app.importer import (
+from app.db.models import User
+from app.db.session import get_db
+from app.importer import (
     import_github_repository,
     import_project_folder,
 )

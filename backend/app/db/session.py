@@ -8,7 +8,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.config import settings
+from app.config import settings
 
 
 def get_normalized_database_url(url: str | None = None) -> str:

@@ -18,9 +18,9 @@ import jwt
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from backend.app.config import settings
-from backend.app.db.models import User
-from backend.app.db.session import get_db
+from app.config import settings
+from app.db.models import User
+from app.db.session import get_db
 
 
 # --- Password Hashing Utilities ---

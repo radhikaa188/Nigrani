@@ -14,10 +14,10 @@ from fastapi.testclient import TestClient
 import jwt
 from sqlalchemy import select
 
-from backend.app.auth import create_access_token, verify_password
-from backend.app.db.models import User
-from backend.app.db.session import SessionLocal
-from backend.app.main import app
+from app.auth import create_access_token, verify_password
+from app.db.models import User
+from app.db.session import SessionLocal
+from app.main import app
 
 client = TestClient(app)
 

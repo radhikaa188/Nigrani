@@ -2,8 +2,8 @@
 Database models and session exports.
 """
 
-from backend.app.db.base import Base
-from backend.app.db.models import (
+from app.db.base import Base
+from app.db.models import (
     Project,
     Protection,
     ProtectionResult,
@@ -12,7 +12,7 @@ from backend.app.db.models import (
     User,
     Version,
 )
-from backend.app.db.session import SessionLocal, engine, get_db
+from app.db.session import SessionLocal, engine, get_db
 
 __all__ = [
     "Base",

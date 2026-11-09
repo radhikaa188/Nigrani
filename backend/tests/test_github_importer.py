@@ -31,11 +31,11 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from backend.app.auth import create_access_token
-from backend.app.db.models import Project, User, Version
-from backend.app.db.session import SessionLocal
-from backend.app.importer import SNAPSHOTS_ROOT
-from backend.app.main import app
+from app.auth import create_access_token
+from app.db.models import Project, User, Version
+from app.db.session import SessionLocal
+from app.importer import SNAPSHOTS_ROOT
+from app.main import app
 
 client = TestClient(app)
 
@@ -79,9 +79,7 @@ def test_github_import_success_and_db_persistence():
         (git_dir / "HEAD").write_text(MOCK_COMMIT_HASH, encoding="utf-8")
 
     try:
-        with mock.patch(
-            "backend.app.importer.clone_github_repo", side_effect=mock_clone
-        ):
+        with mock.patch("app.importer.clone_github_repo", side_effect=mock_clone):
             res = client.post(
                 f"/api/v1/projects/{project_id}/import/github",
                 json={"repository_url": "https://github.com/expressjs/sample-app"},
@@ -130,9 +128,7 @@ def test_github_import_success_and_db_persistence():
         assert (snapshot_path / "package.json").is_file()
 
         # Subsequent import on same project increments version to 2
-        with mock.patch(
-            "backend.app.importer.clone_github_repo", side_effect=mock_clone
-        ):
+        with mock.patch("app.importer.clone_github_repo", side_effect=mock_clone):
             res_v2 = client.post(
                 f"/api/v1/projects/{project_id}/import",
                 json={"repository_url": "https://github.com/expressjs/sample-app.git"},
@@ -172,7 +168,7 @@ def test_github_import_unsupported_python_repository():
 
     try:
         with mock.patch(
-            "backend.app.importer.clone_github_repo", side_effect=mock_clone_python
+            "app.importer.clone_github_repo", side_effect=mock_clone_python
         ):
             res = client.post(
                 f"/api/v1/projects/{project_id}/import/github",
@@ -315,9 +311,7 @@ def test_github_import_nonexistent_or_private_repository():
         )
 
     try:
-        with mock.patch(
-            "backend.app.importer.clone_github_repo", side_effect=mock_clone_404
-        ):
+        with mock.patch("app.importer.clone_github_repo", side_effect=mock_clone_404):
             res = client.post(
                 f"/api/v1/projects/{project_id}/import/github",
                 json={
@@ -353,7 +347,7 @@ def test_github_import_clone_timeout():
 
     try:
         with mock.patch(
-            "backend.app.importer.clone_github_repo", side_effect=mock_clone_timeout
+            "app.importer.clone_github_repo", side_effect=mock_clone_timeout
         ):
             res = client.post(
                 f"/api/v1/projects/{project_id}/import/github",

@@ -27,7 +27,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Project, User, Version
+from app.db.models import Project, User, Version
 
 # Workspace root and managed snapshots paths
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
