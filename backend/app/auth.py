@@ -213,6 +213,5 @@ class LoginResponse(BaseModel):
     """JWT response payload upon successful login."""
 
     access_token: str
-    token: str
     token_type: str = "bearer"
     user: UserResponse

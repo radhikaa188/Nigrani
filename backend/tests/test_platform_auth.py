@@ -98,6 +98,8 @@ def test_auth_login_with_correct_credentials():
         assert login_res.status_code == 200
         login_data = login_res.json()
         assert "access_token" in login_data
+        assert "token" not in login_data
+        assert set(login_data.keys()) == {"access_token", "token_type", "user"}
         assert login_data["token_type"] == "bearer"
         assert login_data["user"]["email"] == test_email
         assert login_data["user"]["id"] == str(user_id)
@@ -274,3 +276,11 @@ def test_openapi_http_bearer_security_scheme():
     assert paths["/api/v1/health"]["get"].get("security") is None
     assert paths["/api/v1/auth/register"]["post"].get("security") is None
     assert paths["/api/v1/auth/login"]["post"].get("security") is None
+
+    # Verify LoginResponse schema has access_token, token_type, user and NOT token
+    login_schema = openapi["components"]["schemas"]["LoginResponse"]
+    assert "access_token" in login_schema["properties"]
+    assert "token_type" in login_schema["properties"]
+    assert "user" in login_schema["properties"]
+    assert "token" not in login_schema["properties"]
+    assert set(login_schema["required"]) == {"access_token", "user"}
