@@ -21,13 +21,13 @@ from app.auth import (
     hash_password,
     verify_password,
 )
-from app.db.models import Project, Protection, User, Version
+from app.db.models import Project, Protection, Run, User, Version
 from app.db.session import get_db
 from app.importer import (
     import_github_repository,
     import_project_folder,
 )
-from app.jobs import simulate_work_job
+from app.jobs import execute_run_job, simulate_work_job
 from app.queue import get_job_info, get_queue
 
 app = FastAPI(
@@ -165,6 +165,34 @@ class ProtectionResponse(BaseModel):
     test_params: dict[str, Any] = {}
     confirmed_by: str | None = None
     confirmed_at: str | None = None
+    created_at: str
+
+
+VALID_RUN_TYPES = {"baseline", "monitor", "fix", "condense"}
+
+
+class RunCreateRequest(BaseModel):
+    """Optional payload when queueing a new execution run."""
+
+    type: str = "baseline"
+    duration_seconds: float = 3.0
+
+
+class RunResponse(BaseModel):
+    """Detailed representation of an execution run."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    version_id: str
+    project_id: str
+    type: str
+    status: str
+    job_id: str | None = None
+    model: dict[str, Any] | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    error: str | None = None
     created_at: str
 
 
@@ -717,6 +745,117 @@ def update_protection(
         if protection.confirmed_at
         else None,
         "created_at": protection.created_at.isoformat(),
+    }
+
+
+# --- Runs Endpoints (Stage 3, Task 27) ---
+
+
+@api_v1_router.post(
+    "/versions/{version_id}/runs",
+    response_model=RunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def create_version_run(
+    version_id: uuid.UUID,
+    payload: RunCreateRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Start an execution run for a project version.
+    Creates a trackable row in the runs table (status='queued'),
+    enqueues an RQ job to execute it, and stores the job_id on the run record.
+    """
+    version = db.get(Version, version_id)
+    if (
+        not version
+        or not version.project
+        or version.project.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version not found",
+        )
+
+    run_type = payload.type.strip().lower() if payload and payload.type else "baseline"
+    if run_type not in VALID_RUN_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid run type '{payload.type if payload else ''}'. Must be one of: {', '.join(sorted(VALID_RUN_TYPES))}",
+        )
+
+    duration = payload.duration_seconds if payload is not None else 3.0
+
+    run = Run(
+        id=uuid.uuid4(),
+        version_id=version_id,
+        type=run_type,
+        status="queued",
+        job_id=None,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    # Enqueue background RQ worker job
+    queue = get_queue()
+    job = queue.enqueue(execute_run_job, str(run.id), duration_seconds=duration)
+
+    run.job_id = job.id
+    db.commit()
+    db.refresh(run)
+
+    return {
+        "id": str(run.id),
+        "version_id": str(run.version_id),
+        "project_id": str(version.project_id),
+        "type": run.type,
+        "status": run.status,
+        "job_id": run.job_id,
+        "model": run.model,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "error": run.error,
+        "created_at": run.created_at.isoformat(),
+    }
+
+
+@api_v1_router.get(
+    "/runs/{run_id}",
+    response_model=RunResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_run_status(
+    run_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Retrieve run execution status directly from the database record."""
+    run = db.get(Run, run_id)
+    if (
+        not run
+        or not run.version
+        or not run.version.project
+        or run.version.project.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Run not found",
+        )
+
+    return {
+        "id": str(run.id),
+        "version_id": str(run.version_id),
+        "project_id": str(run.version.project_id),
+        "type": run.type,
+        "status": run.status,
+        "job_id": run.job_id,
+        "model": run.model,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "error": run.error,
+        "created_at": run.created_at.isoformat(),
     }
 
 

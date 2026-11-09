@@ -171,6 +171,7 @@ class Run(Base):
     )
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    job_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     model: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

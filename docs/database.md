@@ -21,7 +21,7 @@ kb_chunks (memory, shared or per project)
 
 **versions**: id, project_id, number, commit_hash, parent_version_id, trigger (`import`/`webhook`/`manual`), snapshot_ref.
 
-**runs**: id, version_id, type (`baseline`/`monitor`/`fix`/`condense`), status (`queued`/`running`/`done`/`failed`), model (name and adapter), started_at, finished_at, error.
+**runs**: id, version_id, type (`baseline`/`monitor`/`fix`/`condense`), status (`queued`/`running`/`done`/`failed`), job_id, model (name and adapter), started_at, finished_at, error.
 
 **agent_steps**: id, run_id, agent (`mapper`/`auditor`/`fixer`/`optimizer`/`sentinel`/`orchestrator`), step_no, kind (`model_call`/`tool_call`/`observation`), name, input (JSONB), output (JSONB), duration_ms, tokens_in, tokens_out, status. This is the replayable agent trace.
 
