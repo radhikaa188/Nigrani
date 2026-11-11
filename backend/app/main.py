@@ -3,10 +3,15 @@ Main FastAPI application entrypoint for Nigrani backend.
 """
 
 from datetime import datetime, timezone
+import hashlib
+import hmac
+import json
+import re
+import secrets
 from typing import Any
 import uuid
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -33,7 +38,9 @@ from app.db.models import (
 from app.db.session import get_db
 from app.importer import (
     import_github_repository,
+    import_github_webhook_version,
     import_project_folder,
+    validate_github_url,
 )
 from app.jobs import execute_run_job
 from app.queue import get_queue
@@ -206,6 +213,35 @@ class RunResponse(BaseModel):
     error: str | None = None
     created_at: str
     summary: RunSummary | None = None
+
+
+SHA256_SIG_RE = re.compile(r"^sha256=[0-9a-fA-F]{64}$")
+COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
+
+
+class WebhookSecretRequest(BaseModel):
+    """Optional custom webhook secret; auto-generated if omitted."""
+
+    webhook_secret: str | None = None
+
+
+class WebhookSecretResponse(BaseModel):
+    """Response returning a newly configured webhook secret once."""
+
+    project_id: str
+    webhook_secret: str
+
+
+class WebhookPushResponse(BaseModel):
+    """Response returned when a GitHub webhook push triggers a new version and scan run."""
+
+    project_id: str
+    version_id: str
+    version_number: int
+    run_id: str
+    status: str
+    commit_hash: str
+    trigger: str
 
 
 @api_v1_router.get("/health")
@@ -732,6 +768,32 @@ def update_protection(
 # --- Runs Endpoints (Stage 3, Task 27) ---
 
 
+def _enqueue_run_for_version(
+    version_id: uuid.UUID,
+    run_type: str,
+    db: Session,
+) -> Run:
+    """Persist a queued Run record for a version and enqueue execute_run_job via RQ."""
+    run = Run(
+        id=uuid.uuid4(),
+        version_id=version_id,
+        type=run_type,
+        status="queued",
+        job_id=None,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    queue = get_queue()
+    job = queue.enqueue(execute_run_job, str(run.id), job_timeout=300)
+
+    run.job_id = job.id
+    db.commit()
+    db.refresh(run)
+    return run
+
+
 @api_v1_router.post(
     "/versions/{version_id}/runs",
     response_model=RunResponse,
@@ -766,24 +828,7 @@ def create_version_run(
             detail=f"Invalid run type '{payload.type if payload else ''}'. Must be one of: {', '.join(sorted(VALID_RUN_TYPES))}",
         )
 
-    run = Run(
-        id=uuid.uuid4(),
-        version_id=version_id,
-        type=run_type,
-        status="queued",
-        job_id=None,
-    )
-    db.add(run)
-    db.commit()
-    db.refresh(run)
-
-    # Enqueue background RQ worker job (real sandbox test execution, 300s timeout)
-    queue = get_queue()
-    job = queue.enqueue(execute_run_job, str(run.id), job_timeout=300)
-
-    run.job_id = job.id
-    db.commit()
-    db.refresh(run)
+    run = _enqueue_run_for_version(version_id=version_id, run_type=run_type, db=db)
 
     return {
         "id": str(run.id),
@@ -909,6 +954,217 @@ def get_run_status(
         "error": run.error,
         "created_at": run.created_at.isoformat(),
         "summary": _build_run_summary(db, run),
+    }
+
+
+# --- GitHub Webhook Endpoints (Stage 4, Task 31) ---
+
+
+def _extract_repo_url_from_payload(payload: dict[str, Any]) -> str:
+    """Extract and normalize GitHub HTTPS repository URL from webhook payload."""
+    repo_obj = payload.get("repository")
+    if not isinstance(repo_obj, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed webhook payload: missing 'repository' object",
+        )
+
+    raw_url = repo_obj.get("html_url") or repo_obj.get("clone_url")
+    if not raw_url:
+        candidate_url = repo_obj.get("url")
+        if isinstance(candidate_url, str) and candidate_url.startswith(
+            "https://github.com/"
+        ):
+            raw_url = candidate_url
+        elif repo_obj.get("full_name"):
+            raw_url = f"https://github.com/{repo_obj['full_name']}"
+
+    if not raw_url or not isinstance(raw_url, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed webhook payload: missing repository URL",
+        )
+
+    try:
+        normalized_url, _, _ = validate_github_url(raw_url)
+        return normalized_url
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid repository URL in webhook payload: {exc.detail}",
+        ) from exc
+
+
+def _parse_github_push_payload(raw_body: bytes) -> tuple[str, str]:
+    """Parse raw GitHub webhook JSON body and return (normalized_repo_url, commit_hash)."""
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed JSON webhook payload",
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Webhook payload must be a JSON object",
+        )
+
+    normalized_url = _extract_repo_url_from_payload(payload)
+
+    head_commit = payload.get("head_commit")
+    head_commit_id = head_commit.get("id") if isinstance(head_commit, dict) else None
+    commit_hash = payload.get("after") or head_commit_id
+
+    if not commit_hash or not isinstance(commit_hash, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed webhook payload: missing commit hash ('after' or 'head_commit.id')",
+        )
+
+    clean_sha = commit_hash.strip()
+    if clean_sha == "0" * 40:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Deleted branch push events are not scanned",
+        )
+
+    if not COMMIT_SHA_RE.match(clean_sha):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed webhook payload: invalid commit hash format",
+        )
+
+    return normalized_url, clean_sha
+
+
+def _match_project_by_signature(
+    projects: list[Project],
+    raw_body: bytes,
+    sig_header: str,
+) -> Project | None:
+    """Return the project whose webhook_secret verifies X-Hub-Signature-256 in constant time."""
+    provided_sig = sig_header.strip().lower()
+    for proj in projects:
+        if not proj.webhook_secret:
+            continue
+        expected_digest = hmac.new(
+            proj.webhook_secret.encode("utf-8"),
+            raw_body,
+            hashlib.sha256,
+        ).hexdigest()
+        expected_sig = f"sha256={expected_digest}"
+        if hmac.compare_digest(expected_sig, provided_sig):
+            return proj
+    return None
+
+
+@api_v1_router.patch(
+    "/projects/{project_id}/webhook-secret",
+    response_model=WebhookSecretResponse,
+    status_code=status.HTTP_200_OK,
+)
+def set_project_webhook_secret(
+    project_id: uuid.UUID,
+    payload: WebhookSecretRequest | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Set or generate a project's GitHub webhook HMAC secret (returned once)."""
+    project = db.get(Project, project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    if payload is not None and payload.webhook_secret is not None:
+        custom_secret = payload.webhook_secret.strip()
+        if not custom_secret:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="webhook_secret must not be empty",
+            )
+        new_secret = custom_secret
+    else:
+        new_secret = secrets.token_hex(32)
+
+    project.webhook_secret = new_secret
+    db.commit()
+
+    return {
+        "project_id": str(project.id),
+        "webhook_secret": new_secret,
+    }
+
+
+@api_v1_router.post(
+    "/webhooks/github",
+    response_model=WebhookPushResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def github_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Receive GitHub push webhook events:
+    1. Rejects missing or malformed X-Hub-Signature-256 with 401 immediately.
+    2. Parses repository URL and commit hash (400 if malformed).
+    3. Finds matching project(s) by source_ref (404 if unknown repo).
+    4. Verifies HMAC-SHA256 signature against project.webhook_secret before any writes (401 on mismatch).
+    5. Clones snapshot at pushed commit, creates Version (trigger='webhook'), and queues scan Run (202).
+    """
+    sig_header = request.headers.get("X-Hub-Signature-256")
+    if not sig_header or not SHA256_SIG_RE.match(sig_header.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid X-Hub-Signature-256 header",
+        )
+
+    raw_body = await request.body()
+    normalized_url, commit_hash = _parse_github_push_payload(raw_body)
+
+    matching_projects = db.scalars(
+        select(Project)
+        .where(func.lower(Project.source_ref) == normalized_url.lower())
+        .order_by(Project.created_at.asc())
+    ).all()
+    if not matching_projects:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching project found for repository URL",
+        )
+
+    verified_project = _match_project_by_signature(
+        list(matching_projects), raw_body, sig_header
+    )
+    if verified_project is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature",
+        )
+
+    version = import_github_webhook_version(
+        project=verified_project,
+        commit_hash=commit_hash,
+        db=db,
+    )
+    run = _enqueue_run_for_version(
+        version_id=version.id,
+        run_type="monitor",
+        db=db,
+    )
+
+    return {
+        "project_id": str(verified_project.id),
+        "version_id": str(version.id),
+        "version_number": version.number,
+        "run_id": str(run.id),
+        "status": run.status,
+        "commit_hash": version.commit_hash or commit_hash,
+        "trigger": version.trigger,
     }
 
 

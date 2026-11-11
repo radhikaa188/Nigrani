@@ -402,12 +402,18 @@ def save_project_version(
     stack_name: str,
     commit_hash: str | None,
     snapshot_ref: str,
-    current_user: User,
+    current_user: User | None,
     db: Session,
+    trigger: str = "import",
 ) -> tuple[Project, Version]:
     """Shared helper for persisting Project and Version records with ownership check."""
     project = db.get(Project, project_id)
     if project is None:
+        if current_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            )
         project = Project(
             id=project_id,
             owner_id=current_user.id,
@@ -420,8 +426,12 @@ def save_project_version(
         db.add(project)
         db.flush()
     else:
-        # Check ownership
-        if project.owner_id and project.owner_id != current_user.id:
+        # Check ownership when triggered by an authenticated user
+        if (
+            current_user is not None
+            and project.owner_id
+            and project.owner_id != current_user.id
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: You do not own this project",
@@ -432,21 +442,21 @@ def save_project_version(
         if project_name:
             project.name = project_name
 
-    # Determine next version number
-    highest_number = (
-        db.scalar(
-            select(func.max(Version.number)).where(Version.project_id == project.id)
-        )
-        or 0
+    latest_version = db.scalar(
+        select(Version)
+        .where(Version.project_id == project.id)
+        .order_by(Version.number.desc())
+        .limit(1)
     )
-    next_number = highest_number + 1
+    next_number = (latest_version.number + 1) if latest_version else 1
 
     version = Version(
         id=uuid.uuid4(),
         project_id=project.id,
         number=next_number,
         commit_hash=commit_hash,
-        trigger="import",
+        parent_version_id=latest_version.id if latest_version else None,
+        trigger=trigger,
         snapshot_ref=snapshot_ref,
     )
     db.add(version)
@@ -603,6 +613,80 @@ def import_project_folder(
     )
 
 
+def _clone_and_retain_github_snapshot(
+    project_id: uuid.UUID,
+    repository_url: str,
+    db: Session,
+    target_commit_hash: str | None = None,
+) -> tuple[str, str, str, str | None, Path]:
+    """
+    Validate GitHub URL, clone repository into temp dir (checking out target_commit_hash
+    if available on remote), detect stack, and copy snapshot to managed storage.
+    """
+    normalized_url, _, repo = validate_github_url(repository_url)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        clone_dest = Path(tmp_dir) / repo
+        clone_github_repo(normalized_url, clone_dest)
+
+        if target_commit_hash:
+            current_head = get_git_commit_hash(clone_dest)
+            if current_head != target_commit_hash:
+                fetch_proc = subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(clone_dest),
+                        "fetch",
+                        "--depth",
+                        "1",
+                        "origin",
+                        target_commit_hash,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    shell=False,
+                    env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                )
+                if fetch_proc.returncode == 0:
+                    subprocess.run(
+                        ["git", "-C", str(clone_dest), "checkout", "FETCH_HEAD"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        shell=False,
+                    )
+
+        stack_name, detected_other = detect_stack(clone_dest)
+        if stack_name is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Unsupported stack: only Node.js/Express apps are currently"
+                    f" supported. Detected: {detected_other}."
+                ),
+            )
+
+        commit_hash = target_commit_hash or get_git_commit_hash(clone_dest)
+
+        highest_number = (
+            db.scalar(
+                select(func.max(Version.number)).where(Version.project_id == project_id)
+            )
+            or 0
+        )
+        next_number = highest_number + 1
+
+        snapshot_dest = SNAPSHOTS_ROOT / str(project_id) / f"v{next_number}"
+        if snapshot_dest.exists():
+            shutil.rmtree(snapshot_dest)
+        snapshot_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(clone_dest, snapshot_dest, symlinks=False)
+
+    return normalized_url, repo, stack_name, commit_hash, snapshot_dest
+
+
 def import_github_repository(
     project_id: uuid.UUID,
     repository_url: str,
@@ -614,10 +698,6 @@ def import_github_repository(
     Import a public GitHub repository, detect stack, retain managed snapshot,
     and persist Project and Version records.
     """
-    # 1. Validate GitHub URL strictly
-    normalized_url, _, repo = validate_github_url(repository_url)
-
-    # 2. Check ownership upfront if project already exists
     existing_project = db.get(Project, project_id)
     if (
         existing_project
@@ -629,43 +709,14 @@ def import_github_repository(
             detail="Forbidden: You do not own this project",
         )
 
-    # 3. Clone repository in an isolated temporary directory
-    # Using tempfile.TemporaryDirectory context manager guarantees cleanup on success and error
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        clone_dest = Path(tmp_dir) / repo
-        clone_github_repo(normalized_url, clone_dest)
-
-        # 4. Detect technology stack
-        stack_name, detected_other = detect_stack(clone_dest)
-        if stack_name is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=(
-                    "Unsupported stack: only Node.js/Express apps are currently"
-                    f" supported. Detected: {detected_other}."
-                ),
-            )
-
-        # 5. Extract Git commit hash from HEAD
-        commit_hash = get_git_commit_hash(clone_dest)
-
-        # 6. Calculate next version number to name snapshot directory
-        highest_number = (
-            db.scalar(
-                select(func.max(Version.number)).where(Version.project_id == project_id)
-            )
-            or 0
+    normalized_url, repo, stack_name, commit_hash, snapshot_dest = (
+        _clone_and_retain_github_snapshot(
+            project_id=project_id,
+            repository_url=repository_url,
+            db=db,
         )
-        next_number = highest_number + 1
+    )
 
-        # 7. Retain snapshot in project's managed storage
-        snapshot_dest = SNAPSHOTS_ROOT / str(project_id) / f"v{next_number}"
-        if snapshot_dest.exists():
-            shutil.rmtree(snapshot_dest)
-        snapshot_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(clone_dest, snapshot_dest, symlinks=False)
-
-    # 8. Persist Project and Version records in PostgreSQL
     effective_name = project_name or repo
     try:
         project, version = save_project_version(
@@ -678,11 +729,50 @@ def import_github_repository(
             snapshot_ref=str(snapshot_dest),
             current_user=current_user,
             db=db,
+            trigger="import",
         )
     except Exception:
-        # If DB persistence fails, clean up the retained snapshot
         if snapshot_dest.exists():
             shutil.rmtree(snapshot_dest, ignore_errors=True)
         raise
 
     return project, version
+
+
+def import_github_webhook_version(
+    project: Project,
+    commit_hash: str,
+    db: Session,
+) -> Version:
+    """
+    Re-clone an existing GitHub-backed project at the webhook's pushed commit,
+    retain a new version snapshot, and create a Version row with trigger='webhook'.
+    """
+    normalized_url, _, stack_name, effective_commit, snapshot_dest = (
+        _clone_and_retain_github_snapshot(
+            project_id=project.id,
+            repository_url=project.source_ref,
+            db=db,
+            target_commit_hash=commit_hash,
+        )
+    )
+
+    try:
+        _, version = save_project_version(
+            project_id=project.id,
+            project_name=project.name,
+            source_type="github",
+            source_ref=normalized_url,
+            stack_name=stack_name,
+            commit_hash=effective_commit,
+            snapshot_ref=str(snapshot_dest),
+            current_user=None,
+            db=db,
+            trigger="webhook",
+        )
+    except Exception:
+        if snapshot_dest.exists():
+            shutil.rmtree(snapshot_dest, ignore_errors=True)
+        raise
+
+    return version
