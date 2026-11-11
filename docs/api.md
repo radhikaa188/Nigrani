@@ -10,7 +10,7 @@ Errors: `{ "error": { "code": "...", "message": "..." } }`. Pagination: `?limit=
 | POST | /projects | Create project |
 | GET | /projects | List mine |
 | GET | /projects/{id} | Summary |
-| POST | /projects/{id}/import | Import code, create Version 1, start baseline run (202) |
+| POST | /projects/{id}/import | Import code, create Version 1, auto-generate and return server-side `webhook_secret` (start baseline run) |
 | GET | /projects/{id}/versions | List versions |
 | GET | /versions/{id} | Detail with metrics |
 | GET | /versions/{id}/model | Application Model graph |
@@ -58,7 +58,9 @@ Errors: `{ "error": { "code": "...", "message": "..." } }`. Pagination: `?limit=
 | Method | Path | Purpose |
 |---|---|---|
 | GET/PUT | /settings/model | Model adapter (`ollama` or `hosted`) and model name |
-| POST | /webhooks/github | Push event: verify signature, create version, queue monitor run, return 202 |
+| GET | /projects/{id}/webhook-secret | Retrieve this project's existing server-generated `webhook_secret` (read-only; secrets are strictly server-generated, never client-provided) |
+| POST | /projects/{id}/webhook-secret/regenerate | Rotate and return a new server-generated `webhook_secret` (no request body), invalidating the previous secret |
+| POST | /webhooks/github | Push event: verify HMAC-SHA256 signature against the server-generated `webhook_secret`, create version, queue monitor run, return 202 |
 
 ## Example: regression report
 ```json

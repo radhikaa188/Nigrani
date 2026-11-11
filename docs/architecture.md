@@ -35,7 +35,7 @@ React Dashboard <-> FastAPI <-> PostgreSQL / Supabase
 | Memory | Protection history, past fixes, security notes | Postgres tables; pgvector later | Agents |
 | Verification gate | Accept or reject every fix or condense | tsc/eslint/npm build, deepdiff, own code | Agents, test engine |
 | Database | All state | Supabase free tier or local Postgres | Everything |
-| GitHub link | Tells us about new pushes | Webhooks, HMAC check, PyGithub, tunnel in development | Backend |
+| GitHub link | Tells us about new pushes | Webhooks, server-generated secrets (`secrets.token_hex(32)`), HMAC check, PyGithub, tunnel in development | Backend |
 | Logging | Replay any run | structlog, JSON, stored as `agent_steps` | All |
 
 ## 3. Data flow by phase
@@ -54,7 +54,7 @@ React Dashboard <-> FastAPI <-> PostgreSQL / Supabase
 6. Developer approves; result saved as **Baseline V1**.
 
 **Phase 4, monitor (core).**
-1. Webhook creates Version N+1 and queues a run.
+1. Project import auto-generates a server-side `webhook_secret` (never client-provided; retrievable via `GET` or rotated via `POST .../regenerate`). Incoming GitHub push webhooks verify the HMAC-SHA256 signature against that secret, create Version N+1, and queue a run.
 2. Diff plus the Application Model selects affected protections (small apps: run all).
 3. Sandbox runs: new-code checks, old fixed-vulnerability tests, old protection tests; plus quality drift.
 4. SQL comparison with the previous result: PASS to FAIL is a regression.

@@ -87,6 +87,8 @@ class ProjectImportResponse(BaseModel):
     commit_hash: str | None
     trigger: str
     snapshot_ref: str
+    webhook_secret: str
+    webhook_secret_note: str
 
 
 VALID_TEST_TEMPLATES = {"ownership", "unauthenticated", "role", "rls", "validation"}
@@ -219,14 +221,8 @@ SHA256_SIG_RE = re.compile(r"^sha256=[0-9a-fA-F]{64}$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
 
 
-class WebhookSecretRequest(BaseModel):
-    """Optional custom webhook secret; auto-generated if omitted."""
-
-    webhook_secret: str | None = None
-
-
 class WebhookSecretResponse(BaseModel):
-    """Response returning a newly configured webhook secret once."""
+    """Response returning a server-generated project webhook secret."""
 
     project_id: str
     webhook_secret: str
@@ -379,6 +375,11 @@ def import_project(
             git_ref=effective_ref,
         )
 
+    return _serialize_import_response(project, version)
+
+
+def _serialize_import_response(project: Project, version: Version) -> dict[str, Any]:
+    """Build standard project import response including server-generated webhook_secret."""
     return {
         "project_id": str(project.id),
         "project_name": project.name,
@@ -388,6 +389,8 @@ def import_project(
         "commit_hash": version.commit_hash,
         "trigger": version.trigger,
         "snapshot_ref": version.snapshot_ref or "",
+        "webhook_secret": project.webhook_secret or "",
+        "webhook_secret_note": "Save this now — you'll need it to configure the GitHub webhook.",
     }
 
 
@@ -411,16 +414,7 @@ def import_project_github(
         project_name=payload.project_name,
     )
 
-    return {
-        "project_id": str(project.id),
-        "project_name": project.name,
-        "stack": project.stack or "",
-        "version_id": str(version.id),
-        "version_number": version.number,
-        "commit_hash": version.commit_hash,
-        "trigger": version.trigger,
-        "snapshot_ref": version.snapshot_ref or "",
-    }
+    return _serialize_import_response(project, version)
 
 
 # --- Projects & Versions Read/List Endpoints (Stage 3, Task 26) ---
@@ -1060,36 +1054,57 @@ def _match_project_by_signature(
     return None
 
 
-@api_v1_router.patch(
-    "/projects/{project_id}/webhook-secret",
-    response_model=WebhookSecretResponse,
-    status_code=status.HTTP_200_OK,
-)
-def set_project_webhook_secret(
+def _get_owned_project_or_404(
     project_id: uuid.UUID,
-    payload: WebhookSecretRequest | None = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict[str, str]:
-    """Set or generate a project's GitHub webhook HMAC secret (returned once)."""
+    current_user: User,
+    db: Session,
+) -> Project:
+    """Fetch a project owned by current_user or raise 404."""
     project = db.get(Project, project_id)
     if not project or project.owner_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found",
         )
+    return project
 
-    if payload is not None and payload.webhook_secret is not None:
-        custom_secret = payload.webhook_secret.strip()
-        if not custom_secret:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="webhook_secret must not be empty",
-            )
-        new_secret = custom_secret
-    else:
-        new_secret = secrets.token_hex(32)
 
+@api_v1_router.get(
+    "/projects/{project_id}/webhook-secret",
+    response_model=WebhookSecretResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_project_webhook_secret(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Retrieve the project's server-generated webhook secret."""
+    project = _get_owned_project_or_404(project_id, current_user, db)
+    if not project.webhook_secret:
+        # Backfill only for legacy projects imported before auto-generation
+        project.webhook_secret = secrets.token_hex(32)
+        db.commit()
+
+    return {
+        "project_id": str(project.id),
+        "webhook_secret": project.webhook_secret,
+    }
+
+
+@api_v1_router.post(
+    "/projects/{project_id}/webhook-secret/regenerate",
+    response_model=WebhookSecretResponse,
+    status_code=status.HTTP_200_OK,
+)
+def regenerate_project_webhook_secret(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Rotate a project's GitHub webhook secret (server-generated; invalidates old secret)."""
+    project = _get_owned_project_or_404(project_id, current_user, db)
+    new_secret = secrets.token_hex(32)
     project.webhook_secret = new_secret
     db.commit()
 

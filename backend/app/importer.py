@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import tarfile
@@ -422,6 +423,7 @@ def save_project_version(
             source_ref=source_ref,
             stack=stack_name,
             default_branch="main",
+            webhook_secret=secrets.token_hex(32),
         )
         db.add(project)
         db.flush()
@@ -441,6 +443,8 @@ def save_project_version(
         project.source_ref = source_ref
         if project_name:
             project.name = project_name
+        if not project.webhook_secret:
+            project.webhook_secret = secrets.token_hex(32)
 
     latest_version = db.scalar(
         select(Version)

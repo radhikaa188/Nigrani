@@ -2,12 +2,13 @@
 Tests for GitHub Webhook receiver and project webhook_secret configuration (Stage 4, Task 31).
 
 Covers:
-1. Setting/generating webhook_secret (auth, ownership check, custom & auto-generated).
-2. Valid HMAC-SHA256 signed push webhook -> 202, creates Version (trigger='webhook') and queues Run.
-3. Tampered / wrong HMAC signature -> 401, zero DB writes and zero cloning.
-4. Missing or malformed X-Hub-Signature-256 header -> 401 immediately.
-5. Unknown repository URL -> 404 Not Found.
-6. Malformed JSON, missing fields, or deleted-branch push -> 400 Bad Request.
+1. Auto-generation of server-side webhook_secret on import, read-only GET retrieval, and PATCH removal.
+2. Rotating webhook_secret via POST .../regenerate invalidates the previous secret on webhooks.
+3. Valid HMAC-SHA256 signed push webhook -> 202, creates Version (trigger='webhook') and queues Run.
+4. Tampered / wrong HMAC signature -> 401, zero DB writes and zero cloning.
+5. Missing or malformed X-Hub-Signature-256 header -> 401 immediately.
+6. Unknown repository URL -> 404 Not Found.
+7. Malformed JSON, missing fields, or deleted-branch push -> 400 Bad Request.
 """
 
 from __future__ import annotations
@@ -122,53 +123,168 @@ def webhook_test_context(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     db.close()
 
 
-def test_set_project_webhook_secret(webhook_test_context: dict[str, Any]):
-    """1. Configure or auto-generate project webhook_secret with auth and ownership enforcement."""
+def test_import_auto_generates_and_retrieves_webhook_secret(
+    webhook_test_context: dict[str, Any],
+):
+    """1a. Project import auto-generates webhook_secret and GET retrieves the exact secret."""
+    owner_headers = webhook_test_context["owner_headers"]
+    other_headers = webhook_test_context["other_headers"]
+    db = webhook_test_context["db"]
+    new_project_id = uuid.uuid4()
+
+    try:
+        import_res = client.post(
+            f"/api/v1/projects/{new_project_id}/import",
+            json={"source_path": "golden/notes-app"},
+            headers=owner_headers,
+        )
+        assert import_res.status_code == 201, import_res.text
+        import_data = import_res.json()
+        generated_secret = import_data["webhook_secret"]
+        assert len(generated_secret) == 64
+        int(generated_secret, 16)  # Valid lowercase hex
+        assert "GitHub webhook" in import_data["webhook_secret_note"]
+
+        # Unauthenticated GET -> 401
+        unauth = client.get(f"/api/v1/projects/{new_project_id}/webhook-secret")
+        assert unauth.status_code == 401
+
+        # Non-owner GET -> 404
+        non_owner = client.get(
+            f"/api/v1/projects/{new_project_id}/webhook-secret",
+            headers=other_headers,
+        )
+        assert non_owner.status_code == 404
+
+        # Owner GET -> returns the exact secret generated during import
+        get_res = client.get(
+            f"/api/v1/projects/{new_project_id}/webhook-secret",
+            headers=owner_headers,
+        )
+        assert get_res.status_code == 200, get_res.text
+        get_data = get_res.json()
+        assert get_data["project_id"] == str(new_project_id)
+        assert get_data["webhook_secret"] == generated_secret
+    finally:
+        db.expire_all()
+        imported = db.get(Project, new_project_id)
+        if imported is not None:
+            db.delete(imported)
+            db.commit()
+        snap_dir = SNAPSHOTS_ROOT / str(new_project_id)
+        if snap_dir.exists():
+            shutil.rmtree(snap_dir, ignore_errors=True)
+
+
+def test_patch_webhook_secret_endpoint_removed(webhook_test_context: dict[str, Any]):
+    """1b. Legacy PATCH /projects/{id}/webhook-secret is removed (no client-provided secrets)."""
     project = webhook_test_context["project"]
+    owner_headers = webhook_test_context["owner_headers"]
+
+    res = client.patch(
+        f"/api/v1/projects/{project.id}/webhook-secret",
+        json={"webhook_secret": "client-supplied-secret"},  # pragma: allowlist secret
+        headers=owner_headers,
+    )
+    assert res.status_code in (404, 405)
+
+    path_ops = app.openapi()["paths"].get(
+        "/api/v1/projects/{project_id}/webhook-secret", {}
+    )
+    assert "patch" not in path_ops
+    assert "get" in path_ops
+
+    regen_ops = app.openapi()["paths"].get(
+        "/api/v1/projects/{project_id}/webhook-secret/regenerate", {}
+    )
+    assert "post" in regen_ops
+    assert "requestBody" not in regen_ops["post"]
+
+
+def test_regenerate_webhook_secret_rotates_and_invalidates_old_secret(
+    webhook_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """2. POST .../webhook-secret/regenerate rotates the secret and rejects old HMAC signatures."""
+    project = webhook_test_context["project"]
+    repo_url = webhook_test_context["repo_url"]
+    repo_slug = webhook_test_context["repo_slug"]
+    old_secret = webhook_test_context["webhook_secret"]
     owner_headers = webhook_test_context["owner_headers"]
     other_headers = webhook_test_context["other_headers"]
     db = webhook_test_context["db"]
 
-    # Unauthenticated -> 401
-    unauth = client.patch(f"/api/v1/projects/{project.id}/webhook-secret")
-    assert unauth.status_code == 401
-
-    # Non-owner -> 404
-    non_owner = client.patch(
-        f"/api/v1/projects/{project.id}/webhook-secret",
-        headers=other_headers,
+    assert (
+        client.post(
+            f"/api/v1/projects/{project.id}/webhook-secret/regenerate"
+        ).status_code
+        == 401
     )
-    assert non_owner.status_code == 404
+    assert (
+        client.post(
+            f"/api/v1/projects/{project.id}/webhook-secret/regenerate",
+            headers=other_headers,
+        ).status_code
+        == 404
+    )
 
-    # Whitespace secret -> 400
-    blank_res = client.patch(
-        f"/api/v1/projects/{project.id}/webhook-secret",
-        json={"webhook_secret": "   "},
+    regen_res = client.post(
+        f"/api/v1/projects/{project.id}/webhook-secret/regenerate",
         headers=owner_headers,
     )
-    assert blank_res.status_code == 400
-
-    # Auto-generate when omitted
-    gen_res = client.patch(
-        f"/api/v1/projects/{project.id}/webhook-secret",
-        headers=owner_headers,
-    )
-    assert gen_res.status_code == 200
-    generated_secret = gen_res.json()["webhook_secret"]
-    assert len(generated_secret) == 64
+    assert regen_res.status_code == 200, regen_res.text
+    new_secret = regen_res.json()["webhook_secret"]
+    assert len(new_secret) == 64
+    int(new_secret, 16)
+    assert new_secret != old_secret
 
     db.refresh(project)
-    assert project.webhook_secret == generated_secret
+    assert project.webhook_secret == new_secret
 
-    # Set custom secret
-    custom = "my-custom-github-webhook-secret"  # pragma: allowlist secret
-    custom_res = client.patch(
-        f"/api/v1/projects/{project.id}/webhook-secret",
-        json={"webhook_secret": custom},
-        headers=owner_headers,
+    def fake_clone(url: str, dest: Path, timeout_seconds: int | None = None) -> None:
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "package.json").write_text(
+            json.dumps(
+                {"name": "mock-express", "dependencies": {"express": "^4.18.2"}}
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("app.importer.clone_github_repo", fake_clone)
+
+    pushed_commit = (
+        "fedcba9876543210fedcba9876543210fedcba98"  # pragma: allowlist secret
     )
-    assert custom_res.status_code == 200
-    assert custom_res.json()["webhook_secret"] == custom
+    raw_body = json.dumps(
+        {
+            "ref": "refs/heads/main",
+            "after": pushed_commit,
+            "repository": {"full_name": repo_slug, "html_url": repo_url},
+            "head_commit": {"id": pushed_commit, "message": "Rotate secret"},
+        }
+    ).encode("utf-8")
+
+    # Old secret must now fail with 401
+    old_res = client.post(
+        "/api/v1/webhooks/github",
+        content=raw_body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign_payload(old_secret, raw_body),
+        },
+    )
+    assert old_res.status_code == 401
+
+    # New secret succeeds with 202
+    new_res = client.post(
+        "/api/v1/webhooks/github",
+        content=raw_body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign_payload(new_secret, raw_body),
+        },
+    )
+    assert new_res.status_code == 202, new_res.text
 
 
 def test_github_webhook_valid_signature_creates_version_and_run(
