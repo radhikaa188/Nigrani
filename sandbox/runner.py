@@ -94,6 +94,28 @@ def verify_network_isolation(
     return result.returncode != 0
 
 
+def build_snapshot_image(
+    snapshot_dir: Path,
+    image_tag: str,
+    dockerfile: Path = SANDBOX_DOCKERFILE,
+) -> str:
+    """Builds a sandbox Docker image directly from a local snapshot directory."""
+    if not snapshot_dir.is_dir():
+        raise RuntimeError(f"Snapshot directory does not exist: {snapshot_dir}")
+
+    build_cmd = [
+        "docker",
+        "build",
+        "-t",
+        image_tag,
+        "-f",
+        str(dockerfile),
+        str(snapshot_dir),
+    ]
+    subprocess.run(build_cmd, capture_output=True, text=True, check=True)
+    return image_tag
+
+
 def create_notes_image_from_tag(
     tag: str,
     app_dir: Path = NOTES_APP_DIR,
@@ -101,18 +123,7 @@ def create_notes_image_from_tag(
     image_tag: str | None = None,
     broken_build: bool = False,
 ) -> str:
-    """Exports git archive of golden/notes-app at tag and builds an image.
-
-    Args:
-        tag: Git tag or branch to checkout.
-        app_dir: Path to the target git repository.
-        dockerfile: Generic sandbox Dockerfile.
-        image_tag: Optional custom image tag name.
-        broken_build: If True, injects invalid syntax into app to simulate broken build.
-
-    Returns:
-        The built Docker image tag.
-    """
+    """Exports git archive of golden/notes-app at tag and builds an image."""
     if not image_tag:
         image_tag = f"nigrani-sandbox-notes:{tag.replace('/', '-')}"
 
@@ -133,82 +144,48 @@ def create_notes_image_from_tag(
                     "SYNTAX_ERROR_BROKEN_BUILD = ;;;", encoding="utf-8"
                 )
 
-        build_cmd = [
-            "docker",
-            "build",
-            "-t",
-            image_tag,
-            "-f",
-            str(dockerfile),
-            str(temp_dir),
-        ]
-        subprocess.run(build_cmd, capture_output=True, text=True, check=True)
-        return image_tag
+        return build_snapshot_image(
+            temp_dir, image_tag=image_tag, dockerfile=dockerfile
+        )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @contextlib.contextmanager
-def running_notes_container(
-    tag: str = "v1",
-    port: int | None = None,
+def _run_container_from_image(
+    image_tag: str,
+    container_name: str,
+    port: int,
     network: str = DEFAULT_NETWORK,
     memory_mb: int = DEFAULT_MEMORY_MB,
     startup_timeout: float = 15.0,
-    container_prefix: str = "nigrani-notes-runner",
     broken_build: bool = False,
+    env_vars: dict[str, str] | None = None,
 ) -> Generator[str, None, None]:
-    """Context manager spinning up a Notes app container with strict resource limits.
+    """Shared helper that starts a container from image_tag, enforces limits, and cleans up."""
+    base_env = {
+        "PORT": str(port),
+        "DATABASE_URL": "postgresql://notes_user:notes_password@notes-db:5432/notes_db",  # pragma: allowlist secret
+        "JWT_SECRET": "dev-secret-key-notes",  # pragma: allowlist secret
+    }
+    if env_vars:
+        base_env.update(env_vars)
 
-    Ensures:
-    - --memory={memory_mb}m memory cap
-    - Non-root user execution (uid != 0)
-    - Guaranteed teardown (docker rm -f) in finally block
-    """
-    if port is None:
-        port = find_free_port()
-
-    container_name = f"{container_prefix}-{tag}-{secrets.token_hex(4)}"
-    temp_dir = Path(tempfile.mkdtemp(prefix=f"nigrani-notes-ctx-{tag}-"))
+    run_cmd = [
+        "docker",
+        "run",
+        "-d",
+        "--name",
+        container_name,
+        f"--memory={memory_mb}m",
+        "--network",
+        network,
+    ]
+    for key, val in base_env.items():
+        run_cmd.extend(["-e", f"{key}={val}"])
+    run_cmd.extend(["-p", f"{port}:{port}", image_tag])
 
     try:
-        image_tag = f"nigrani-sandbox-notes:{tag.replace('/', '-')}"
-        if broken_build:
-            image_tag = f"nigrani-sandbox-notes-broken:{secrets.token_hex(4)}"
-
-        # Build image if broken or not already cached
-        images_check = subprocess.run(
-            ["docker", "images", "-q", image_tag],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if broken_build or not images_check.stdout.strip():
-            create_notes_image_from_tag(
-                tag,
-                image_tag=image_tag,
-                broken_build=broken_build,
-            )
-
-        run_cmd = [
-            "docker",
-            "run",
-            "-d",
-            "--name",
-            container_name,
-            f"--memory={memory_mb}m",
-            "--network",
-            network,
-            "-e",
-            f"PORT={port}",
-            "-e",
-            "DATABASE_URL=postgresql://notes_user:notes_password@notes-db:5432/notes_db",  # pragma: allowlist secret
-            "-e",
-            "JWT_SECRET=dev-secret-key-notes",  # pragma: allowlist secret
-            "-p",
-            f"{port}:{port}",
-            image_tag,
-        ]
         subprocess.run(run_cmd, capture_output=True, text=True, check=True)
 
         # Verify non-root execution inside container
@@ -240,7 +217,7 @@ def running_notes_container(
 
         if not healthy:
             raise RuntimeError(
-                f"Notes container ({tag}) failed to respond on /health within {startup_timeout}s"
+                f"Container {container_name} ({image_tag}) failed to respond on /health within {startup_timeout}s"
             )
 
         yield base_url
@@ -251,7 +228,94 @@ def running_notes_container(
             capture_output=True,
             check=False,
         )
-        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@contextlib.contextmanager
+def running_snapshot_container(
+    snapshot_dir: Path,
+    image_tag: str | None = None,
+    port: int | None = None,
+    network: str = DEFAULT_NETWORK,
+    memory_mb: int = DEFAULT_MEMORY_MB,
+    startup_timeout: float = 15.0,
+    container_prefix: str = "nigrani-snapshot-runner",
+    env_vars: dict[str, str] | None = None,
+    force_rebuild: bool = False,
+) -> Generator[str, None, None]:
+    """Spins up an isolated sandbox container from a snapshot directory on disk."""
+    if port is None:
+        port = find_free_port()
+
+    resolved_dir = Path(snapshot_dir).resolve()
+    if not image_tag:
+        image_tag = f"nigrani-snapshot:{secrets.token_hex(6)}"
+
+    container_name = f"{container_prefix}-{secrets.token_hex(4)}"
+
+    images_check = subprocess.run(
+        ["docker", "images", "-q", image_tag],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if force_rebuild or not images_check.stdout.strip():
+        build_snapshot_image(resolved_dir, image_tag=image_tag)
+
+    with _run_container_from_image(
+        image_tag=image_tag,
+        container_name=container_name,
+        port=port,
+        network=network,
+        memory_mb=memory_mb,
+        startup_timeout=startup_timeout,
+        env_vars=env_vars,
+    ) as base_url:
+        yield base_url
+
+
+@contextlib.contextmanager
+def running_notes_container(
+    tag: str = "v1",
+    port: int | None = None,
+    network: str = DEFAULT_NETWORK,
+    memory_mb: int = DEFAULT_MEMORY_MB,
+    startup_timeout: float = 15.0,
+    container_prefix: str = "nigrani-notes-runner",
+    broken_build: bool = False,
+) -> Generator[str, None, None]:
+    """Context manager spinning up a Notes app container with strict resource limits."""
+    if port is None:
+        port = find_free_port()
+
+    container_name = f"{container_prefix}-{tag}-{secrets.token_hex(4)}"
+    image_tag = f"nigrani-sandbox-notes:{tag.replace('/', '-')}"
+    if broken_build:
+        image_tag = f"nigrani-sandbox-notes-broken:{secrets.token_hex(4)}"
+
+    # Build image if broken or not already cached
+    images_check = subprocess.run(
+        ["docker", "images", "-q", image_tag],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if broken_build or not images_check.stdout.strip():
+        create_notes_image_from_tag(
+            tag,
+            image_tag=image_tag,
+            broken_build=broken_build,
+        )
+
+    with _run_container_from_image(
+        image_tag=image_tag,
+        container_name=container_name,
+        port=port,
+        network=network,
+        memory_mb=memory_mb,
+        startup_timeout=startup_timeout,
+        broken_build=broken_build,
+    ) as base_url:
+        yield base_url
 
 
 def run_sandboxed_test_with_limits(

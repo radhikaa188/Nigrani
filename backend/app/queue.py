@@ -34,10 +34,16 @@ def get_redis_connection() -> redis.Redis:
         ) from exc
 
 
-def get_queue(name: str = DEFAULT_QUEUE_NAME) -> Queue:
+def get_default_queue_name() -> str:
+    """Resolve active RQ queue name from environment or default."""
+    return os.getenv("RQ_QUEUE_NAME") or DEFAULT_QUEUE_NAME
+
+
+def get_queue(name: str | None = None) -> Queue:
     """Get an RQ Queue bound to the Redis connection."""
     conn = get_redis_connection()
-    return Queue(name, connection=conn)
+    queue_name = name or get_default_queue_name()
+    return Queue(queue_name, connection=conn)
 
 
 def get_job_info(job_id: str) -> dict[str, Any]:

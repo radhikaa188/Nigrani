@@ -16,15 +16,22 @@ import os
 from pathlib import Path
 import sys
 
-# Ensure backend directory is in sys.path for job deserialization
+# Ensure backend directory and repository root are in sys.path for job & sandbox imports
 BACKEND_DIR = Path(__file__).resolve().parent
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+REPO_ROOT = BACKEND_DIR.parent
+for _p in (str(REPO_ROOT), str(BACKEND_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from rq import SimpleWorker  # noqa: E402
 from rq.queue import Queue  # noqa: E402
 
-from app.queue import DEFAULT_QUEUE_NAME, get_redis_connection, get_redis_url  # noqa: E402
+from app.queue import (  # noqa: E402
+    DEFAULT_QUEUE_NAME,
+    get_default_queue_name,
+    get_redis_connection,
+    get_redis_url,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,18 +40,19 @@ logging.basicConfig(
 logger = logging.getLogger("nigrani.worker")
 
 
-def run_worker(queue_name: str = DEFAULT_QUEUE_NAME, burst: bool = False) -> None:
+def run_worker(queue_name: str | None = None, burst: bool = False) -> None:
     """Run an RQ worker listening on the specified queue."""
     redis_url = get_redis_url()
     logger.info("Connecting to Redis at %s", redis_url)
     conn = get_redis_connection()
 
-    queue = Queue(queue_name, connection=conn)
+    effective_queue = queue_name or get_default_queue_name()
+    queue = Queue(effective_queue, connection=conn)
     logger.info(
         "Starting worker (PID %s, concurrency=1, burst=%s) listening on queue '%s'...",
         os.getpid(),
         burst,
-        queue_name,
+        effective_queue,
     )
 
     # SimpleWorker runs jobs sequentially in-process (concurrency 1, Windows and Linux compatible)

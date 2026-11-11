@@ -21,7 +21,15 @@ from app.auth import (
     hash_password,
     verify_password,
 )
-from app.db.models import Project, Protection, Run, User, Version
+from app.db.models import (
+    Project,
+    Protection,
+    ProtectionResult,
+    Regression,
+    Run,
+    User,
+    Version,
+)
 from app.db.session import get_db
 from app.importer import (
     import_github_repository,
@@ -47,6 +55,9 @@ class ProjectImportRequest(BaseModel):
     path: str | None = None
     repository_url: str | None = None
     project_name: str | None = None
+    git_ref: str | None = None
+    ref: str | None = None
+    tag: str | None = None
 
 
 class GitHubImportRequest(BaseModel):
@@ -149,7 +160,33 @@ class RunCreateRequest(BaseModel):
     """Optional payload when queueing a new execution run."""
 
     type: str = "baseline"
-    duration_seconds: float = 3.0
+
+
+class RunRegressionSummary(BaseModel):
+    """Summary of a regression detected during an execution run."""
+
+    id: str
+    protection_id: str
+    protection_code: str | None = None
+    previous_version_id: str
+    current_version_id: str
+    first_failed_version_id: str
+    suspect_commit: str | None = None
+    evidence: dict[str, Any] | None = None
+    state: str
+
+
+class RunSummary(BaseModel):
+    """Execution summary counts and regressions for a run."""
+
+    total_tested: int = 0
+    passed: int = 0
+    failed: int = 0
+    error: int = 0
+    skipped: int = 0
+    regressions_found: int = 0
+    results: list[dict[str, Any]] = []
+    regressions: list[RunRegressionSummary] = []
 
 
 class RunResponse(BaseModel):
@@ -168,6 +205,7 @@ class RunResponse(BaseModel):
     finished_at: str | None = None
     error: str | None = None
     created_at: str
+    summary: RunSummary | None = None
 
 
 @api_v1_router.get("/health")
@@ -295,12 +333,14 @@ def import_project(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Missing source_path or repository_url in request body",
             )
+        effective_ref = payload.git_ref or payload.ref or payload.tag
         project, version = import_project_folder(
             project_id=project_id,
             source_path=source_path,
             current_user=current_user,
             db=db,
             project_name=payload.project_name,
+            git_ref=effective_ref,
         )
 
     return {
@@ -726,8 +766,6 @@ def create_version_run(
             detail=f"Invalid run type '{payload.type if payload else ''}'. Must be one of: {', '.join(sorted(VALID_RUN_TYPES))}",
         )
 
-    duration = payload.duration_seconds if payload is not None else 3.0
-
     run = Run(
         id=uuid.uuid4(),
         version_id=version_id,
@@ -739,9 +777,9 @@ def create_version_run(
     db.commit()
     db.refresh(run)
 
-    # Enqueue background RQ worker job
+    # Enqueue background RQ worker job (real sandbox test execution, 300s timeout)
     queue = get_queue()
-    job = queue.enqueue(execute_run_job, str(run.id), duration_seconds=duration)
+    job = queue.enqueue(execute_run_job, str(run.id), job_timeout=300)
 
     run.job_id = job.id
     db.commit()
@@ -759,6 +797,79 @@ def create_version_run(
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "error": run.error,
         "created_at": run.created_at.isoformat(),
+        "summary": None,
+    }
+
+
+def _build_run_summary(db: Session, run: Run) -> dict[str, Any]:
+    """Assemble protection execution counts, per-protection results, and detected regressions."""
+    prot_results = db.scalars(
+        select(ProtectionResult)
+        .where(ProtectionResult.run_id == run.id)
+        .order_by(ProtectionResult.created_at.asc())
+    ).all()
+
+    passed = sum(1 for r in prot_results if r.status == "PASS")
+    failed = sum(1 for r in prot_results if r.status == "FAIL")
+    error_count = sum(1 for r in prot_results if r.status == "ERROR")
+    skipped = sum(1 for r in prot_results if r.status == "SKIPPED")
+
+    serialized_results = [
+        {
+            "id": str(r.id),
+            "protection_id": str(r.protection_id),
+            "protection_code": r.protection.code if r.protection else None,
+            "status": r.status,
+            "evidence": r.evidence,
+            "duration_ms": r.duration_ms,
+        }
+        for r in prot_results
+    ]
+
+    failed_prot_ids = {r.protection_id for r in prot_results if r.status == "FAIL"}
+    regressions_for_run: list[Regression] = []
+    if failed_prot_ids:
+        candidates = db.scalars(
+            select(Regression)
+            .where(
+                Regression.current_version_id == run.version_id,
+                Regression.protection_id.in_(failed_prot_ids),
+            )
+            .order_by(Regression.created_at.asc())
+        ).all()
+        for reg in candidates:
+            ev_run_id = (
+                (reg.evidence or {}).get("run_id")
+                if isinstance(reg.evidence, dict)
+                else None
+            )
+            if ev_run_id is None or ev_run_id == str(run.id):
+                regressions_for_run.append(reg)
+
+    serialized_regressions = [
+        {
+            "id": str(reg.id),
+            "protection_id": str(reg.protection_id),
+            "protection_code": reg.protection.code if reg.protection else None,
+            "previous_version_id": str(reg.previous_version_id),
+            "current_version_id": str(reg.current_version_id),
+            "first_failed_version_id": str(reg.first_failed_version_id),
+            "suspect_commit": reg.suspect_commit,
+            "evidence": reg.evidence,
+            "state": reg.state,
+        }
+        for reg in regressions_for_run
+    ]
+
+    return {
+        "total_tested": len(prot_results),
+        "passed": passed,
+        "failed": failed,
+        "error": error_count,
+        "skipped": skipped,
+        "regressions_found": len(serialized_regressions),
+        "results": serialized_results,
+        "regressions": serialized_regressions,
     }
 
 
@@ -772,7 +883,7 @@ def get_run_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Retrieve run execution status directly from the database record."""
+    """Retrieve run execution status and result summary directly from the database record."""
     run = db.get(Run, run_id)
     if (
         not run
@@ -797,6 +908,7 @@ def get_run_status(
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "error": run.error,
         "created_at": run.created_at.isoformat(),
+        "summary": _build_run_summary(db, run),
     }
 
 

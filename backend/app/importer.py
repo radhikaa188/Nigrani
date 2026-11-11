@@ -12,12 +12,14 @@ Handles:
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 from typing import Any
 from urllib.parse import urlparse
@@ -38,6 +40,7 @@ SNAPSHOTS_ROOT = Path(os.getenv("SNAPSHOTS_DIR", str(REPO_ROOT / "snapshots")))
 # Repo: 1-100 alphanumeric chars, hyphens, dots, or underscores
 GITHUB_OWNER_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$")
 GITHUB_REPO_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,100}$")
+GIT_REF_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$")
 
 
 def validate_github_url(url: str) -> tuple[str, str, str]:
@@ -454,18 +457,127 @@ def save_project_version(
     return project, version
 
 
+def _archive_local_git_ref(
+    repo_dir: Path,
+    git_ref: str,
+    snapshot_dest: Path,
+) -> str:
+    """Validate git_ref, resolve its commit hash, and extract archive to snapshot_dest."""
+    clean_ref = git_ref.strip()
+    if not GIT_REF_RE.match(clean_ref) or ".." in clean_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid git_ref '{git_ref}'.",
+        )
+
+    rev_proc = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo_dir),
+            "rev-parse",
+            "--verify",
+            f"{clean_ref}^{{commit}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        shell=False,
+    )
+    if rev_proc.returncode != 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Git ref '{clean_ref}' not found in '{repo_dir.name}'.",
+        )
+    commit_hash = rev_proc.stdout.strip()
+
+    archive_proc = subprocess.run(
+        ["git", "-C", str(repo_dir), "archive", "--format=tar", clean_ref],
+        capture_output=True,
+        check=False,
+        shell=False,
+    )
+    if archive_proc.returncode != 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to export git archive for ref '{clean_ref}'.",
+        )
+
+    if snapshot_dest.exists():
+        shutil.rmtree(snapshot_dest)
+    snapshot_dest.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(archive_proc.stdout)) as tar:
+        tar.extractall(path=snapshot_dest)
+
+    return commit_hash
+
+
 def import_project_folder(
     project_id: uuid.UUID,
     source_path: str,
     current_user: User,
     db: Session,
     project_name: str | None = None,
+    git_ref: str | None = None,
 ) -> tuple[Project, Version]:
     """Validate, detect stack, and create/update Project and Version records from local folder."""
     # 1. Path safety and traversal verification
     resolved_path = validate_import_path(source_path)
 
-    # 2. Stack detection
+    # 2. Check ownership upfront if project already exists
+    existing_project = db.get(Project, project_id)
+    if (
+        existing_project
+        and existing_project.owner_id
+        and existing_project.owner_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You do not own this project",
+        )
+
+    effective_name = project_name or resolved_path.name
+
+    # 3. If a specific git_ref (e.g. tag 'v1'/'v2'/'v3') is specified, extract an immutable snapshot
+    if git_ref and git_ref.strip():
+        highest_number = (
+            db.scalar(
+                select(func.max(Version.number)).where(Version.project_id == project_id)
+            )
+            or 0
+        )
+        next_number = highest_number + 1
+        snapshot_dest = SNAPSHOTS_ROOT / str(project_id) / f"v{next_number}"
+        commit_hash = _archive_local_git_ref(resolved_path, git_ref, snapshot_dest)
+
+        stack_name, detected_other = detect_stack(snapshot_dest)
+        if stack_name is None:
+            shutil.rmtree(snapshot_dest, ignore_errors=True)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    "Unsupported stack: only Node.js/Express apps are currently"
+                    f" supported. Detected: {detected_other}."
+                ),
+            )
+
+        try:
+            return save_project_version(
+                project_id=project_id,
+                project_name=effective_name,
+                source_type="folder",
+                source_ref=str(resolved_path),
+                stack_name=stack_name,
+                commit_hash=commit_hash,
+                snapshot_ref=str(snapshot_dest),
+                current_user=current_user,
+                db=db,
+            )
+        except Exception:
+            shutil.rmtree(snapshot_dest, ignore_errors=True)
+            raise
+
+    # 4. Standard folder import without git_ref: inspect folder in-place
     stack_name, detected_other = detect_stack(resolved_path)
     if stack_name is None:
         raise HTTPException(
@@ -476,10 +588,7 @@ def import_project_folder(
             ),
         )
 
-    # 3. Read Git commit hash if available
     commit_hash = get_git_commit_hash(resolved_path)
-
-    effective_name = project_name or resolved_path.name
 
     return save_project_version(
         project_id=project_id,

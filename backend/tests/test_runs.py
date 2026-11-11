@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.auth import create_access_token
-from app.db.models import Project, User, Version
+from app.db.models import Project, Protection, User, Version
 from app.db.session import SessionLocal
 from app.main import app
 from app.queue import get_queue, get_redis_connection
@@ -28,8 +28,11 @@ client = TestClient(app)
 
 
 @pytest.fixture
-def test_setup_for_runs() -> dict[str, Any]:
-    """Create test users and a project with version for testing runs."""
+def test_setup_for_runs(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Create test users, a project with version, and an isolated RQ queue."""
+    isolated_queue = f"test-runs-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setenv("RQ_QUEUE_NAME", isolated_queue)
+
     db = SessionLocal()
     user_a_id = uuid.uuid4()
     user_b_id = uuid.uuid4()
@@ -88,6 +91,9 @@ def test_setup_for_runs() -> dict[str, Any]:
 
     yield context
 
+    # Drain any remaining jobs queued during the test before deleting DB records
+    get_queue().empty()
+
     # Cleanup
     p = db.get(Project, project_id)
     if p:
@@ -103,15 +109,15 @@ def test_setup_for_runs() -> dict[str, Any]:
 
 
 def test_create_and_poll_run_e2e(test_setup_for_runs: dict[str, Any]):
-    """1. Create a run, verify immediate response, process via worker, poll database to 'done'."""
+    """1. Create a run, verify immediate response, process via worker, poll database to 'done' with summary."""
     headers_a = test_setup_for_runs["headers_a"]
     version = test_setup_for_runs["version"]
     project = test_setup_for_runs["project"]
 
-    # Step 1: Start a baseline run (duration 0.05s)
+    # Step 1: Start a baseline run (zero confirmed protections -> tests 0 and completes)
     res_post = client.post(
         f"/api/v1/versions/{version.id}/runs",
-        json={"type": "baseline", "duration_seconds": 0.05},
+        json={"type": "baseline"},
         headers=headers_a,
     )
     assert res_post.status_code == 202
@@ -134,7 +140,7 @@ def test_create_and_poll_run_e2e(test_setup_for_runs: dict[str, Any]):
     # Step 3: Run worker in burst mode to process the run job
     run_worker(burst=True)
 
-    # Step 4: Check status from DB -> should be "done"
+    # Step 4: Check status from DB -> should be "done" with summary
     res_get2 = client.get(f"/api/v1/runs/{run_id}", headers=headers_a)
     assert res_get2.status_code == 200
     db_run2 = res_get2.json()
@@ -143,6 +149,12 @@ def test_create_and_poll_run_e2e(test_setup_for_runs: dict[str, Any]):
     assert db_run2["started_at"] is not None
     assert db_run2["finished_at"] is not None
     assert db_run2["error"] is None
+    assert db_run2["summary"] is not None
+    assert db_run2["summary"]["total_tested"] == 0
+    assert db_run2["summary"]["passed"] == 0
+    assert db_run2["summary"]["failed"] == 0
+    assert db_run2["summary"]["error"] == 0
+    assert db_run2["summary"]["regressions_found"] == 0
 
 
 def test_runs_ownership_isolation(test_setup_for_runs: dict[str, Any]):
@@ -154,7 +166,7 @@ def test_runs_ownership_isolation(test_setup_for_runs: dict[str, Any]):
     # User A creates a run
     res_post = client.post(
         f"/api/v1/versions/{version.id}/runs",
-        json={"type": "baseline", "duration_seconds": 0.01},
+        json={"type": "baseline"},
         headers=headers_a,
     )
     assert res_post.status_code == 202
@@ -173,6 +185,57 @@ def test_runs_ownership_isolation(test_setup_for_runs: dict[str, Any]):
     )
     assert res_b_post.status_code == 404
     assert res_b_post.json()["detail"] == "Version not found"
+
+
+def test_missing_snapshot_records_error_in_run_summary(
+    test_setup_for_runs: dict[str, Any],
+):
+    """3. Missing/broken snapshot records ProtectionResult(status='ERROR') and 0 regressions."""
+    db = SessionLocal()
+    headers_a = test_setup_for_runs["headers_a"]
+    project = test_setup_for_runs["project"]
+    version = test_setup_for_runs["version"]
+
+    try:
+        protection = Protection(
+            id=uuid.uuid4(),
+            project_id=project.id,
+            code="P-01",
+            description="Owner-only access",
+            test_template="ownership",
+            test_params={"resource": "notes"},
+            state="confirmed",
+            source="developer",
+        )
+        db.add(protection)
+        db.commit()
+
+        res_post = client.post(
+            f"/api/v1/versions/{version.id}/runs",
+            json={"type": "baseline"},
+            headers=headers_a,
+        )
+        assert res_post.status_code == 202
+        run_id = res_post.json()["id"]
+
+        run_worker(burst=True)
+
+        res_get = client.get(f"/api/v1/runs/{run_id}", headers=headers_a)
+        assert res_get.status_code == 200
+        data = res_get.json()
+        assert data["status"] == "done"
+        summary = data["summary"]
+        assert summary["total_tested"] == 1
+        assert summary["error"] == 1
+        assert summary["passed"] == 0
+        assert summary["failed"] == 0
+        assert summary["regressions_found"] == 0
+        assert summary["results"][0]["status"] == "ERROR"
+        assert (
+            "Snapshot directory missing" in summary["results"][0]["evidence"]["error"]
+        )
+    finally:
+        db.close()
 
 
 def test_run_endpoints_require_auth():
