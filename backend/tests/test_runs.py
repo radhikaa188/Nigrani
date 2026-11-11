@@ -21,6 +21,7 @@ from app.auth import create_access_token
 from app.db.models import Project, User, Version
 from app.db.session import SessionLocal
 from app.main import app
+from app.queue import get_queue, get_redis_connection
 from worker import run_worker
 
 client = TestClient(app)
@@ -185,3 +186,19 @@ def test_run_endpoints_require_auth():
     get_res = client.get(f"/api/v1/runs/{dummy_uuid}")
     assert get_res.status_code == 401
     assert get_res.headers.get("www-authenticate") == "Bearer"
+
+
+def test_redis_queue_infrastructure_and_removed_test_endpoints():
+    """4. Redis/RQ queue connection works directly and test scaffolding endpoints are removed."""
+    # Underlying queue infrastructure remains functional
+    conn = get_redis_connection()
+    assert conn.ping() is True
+    q = get_queue()
+    assert q.name == "default"
+
+    # Temporary scaffolding endpoints must NOT exist in OpenAPI or router
+    openapi_paths = app.openapi().get("paths", {})
+    assert "/api/v1/test-queue" not in openapi_paths
+    assert "/api/v1/jobs/{job_id}" not in openapi_paths
+    assert client.post("/api/v1/test-queue").status_code == 404
+    assert client.get("/api/v1/jobs/any-id").status_code == 404

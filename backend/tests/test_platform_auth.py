@@ -277,6 +277,10 @@ def test_openapi_http_bearer_security_scheme():
     assert paths["/api/v1/auth/register"]["post"].get("security") is None
     assert paths["/api/v1/auth/login"]["post"].get("security") is None
 
+    # Duplicate non-prefixed auth routes must NOT exist
+    assert "/auth/register" not in paths
+    assert "/auth/login" not in paths
+
     # Verify LoginResponse schema has access_token, token_type, user and NOT token
     login_schema = openapi["components"]["schemas"]["LoginResponse"]
     assert "access_token" in login_schema["properties"]
