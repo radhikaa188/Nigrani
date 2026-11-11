@@ -13,7 +13,7 @@
 | 1 | Prove the idea (CLI only) | Done | stage-1-slice / stage-1-done | 2026-11-05 | 2026-11-05 | Notes app v1-v3; matrix output: PASS, PASS, FAIL (v3) |
 | 2 | Sandbox and test templates | Done | stage-2-sandbox / stage-2-done | 2026-11-06 | 2026-11-06 | All 5 templates verified across Notes v1-v3, PostgREST, broken build; zero leftover containers |
 | 3 | Backend core | Done | stage-3-backend / stage-3-done | 2026-11-07 | 2026-11-09 | Core DB migrations, self-hosted auth, importers, Redis+RQ queue, worker, projects/versions/protections/runs endpoints, run status polling |
-| 4 | Regression engine (core) | Not started | stage-4-regression | | | |
+| 4 | Regression engine (core) | In progress | stage-4-regression | 2026-11-11 | | Task 28: core comparison logic and compare_protection_across_versions with exhaustive 25-case tests complete |
 | 5 | Dashboard v1 | Not started | stage-5-dashboard | | | |
 | A | **Checkpoint A: core demo** | Not started | v0.1 | | | |
 | 6 | Application Model | Not started | stage-6-model | | | |
@@ -93,7 +93,7 @@
 **Done when:** importing an app creates a version and a run you can poll to `done`.
 
 ## Stage 4: Regression engine (core)
-- [ ] Comparison logic: PASS to FAIL is a regression; FAIL to PASS is fixed; none to any is new; ERROR never a regression
+- [x] Comparison logic: PASS to FAIL is a regression; FAIL to PASS is fixed; none to any is new; ERROR never a regression
 - [ ] Impact selection: run all protections (small apps)
 - [ ] GitHub webhook with HMAC check; creates version and queues a monitor run
 - [ ] Regression record: first failed version, suspect commit, associated feature, evidence
